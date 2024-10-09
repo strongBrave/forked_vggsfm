@@ -13,7 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from typing import Optional, Tuple, Union
-from einops import rearrange, repeat
+# from einops import rearrange, repeat
 
 
 from minipytorch3d.harmonic_embedding import HarmonicEmbedding
@@ -163,7 +163,7 @@ def camera_to_pose_encoding(
     """
     Inverse to pose_encoding_to_camera
     """
-    if pose_encoding_type == "absT_quaR_logFL":
+    if pose_encoding_type == "absT_quaR_logFL": # 9
         # Convert rotation matrix to quaternion
         quaternion_R = matrix_to_quaternion(camera.R)
 
@@ -184,7 +184,7 @@ def camera_to_pose_encoding(
             [camera.T, quaternion_R, log_focal_length], dim=-1
         )
 
-    elif pose_encoding_type == "absT_quaR_OneFL":
+    elif pose_encoding_type == "absT_quaR_OneFL": # 8
         # [absolute translation, quaternion rotation, normalized focal length]
         quaternion_R = matrix_to_quaternion(camera.R)
         focal_length = (
@@ -338,9 +338,9 @@ def get_2d_embedding(
     pe_y[:, :, 0::2] = torch.sin(y * div_term)
     pe_y[:, :, 1::2] = torch.cos(y * div_term)
 
-    pe = torch.cat([pe_x, pe_y], dim=2)  # (B, N, C*3)
+    pe = torch.cat([pe_x, pe_y], dim=2)  # (B, N, C*2)
     if cat_coords:
-        pe = torch.cat([xy, pe], dim=2)  # (B, N, C*3+3)
+        pe = torch.cat([xy, pe], dim=2)  # (B, N, C*2+2)
     return pe
 
 
@@ -440,7 +440,7 @@ def sample_features4d(input, coords):
     coords = coords.unsqueeze(2)
 
     # B C R 1
-    feats = bilinear_sampler(input, coords)
+    feats = bilinear_sampler(input, coords) # [B, C, H, W], [B, R, 1, 2] -> [B, C, R, 1]
 
     return feats.permute(0, 2, 1, 3).view(
         B, -1, feats.shape[1] * feats.shape[3]

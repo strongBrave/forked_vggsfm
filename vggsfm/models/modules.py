@@ -47,8 +47,8 @@ class ResidualBlock(nn.Module):
         super(ResidualBlock, self).__init__()
 
         self.conv1 = nn.Conv2d(
-            in_planes,
-            planes,
+            in_planes, # in_channels
+            planes, # out_channels
             kernel_size=kernel_size,
             padding=1,
             stride=stride,
@@ -186,6 +186,7 @@ class AttnBlock(nn.Module):
         self.mlp = Mlp(
             in_features=hidden_size, hidden_features=mlp_hidden_dim, drop=0
         )
+        
 
     def forward(self, x, mask=None):
         # Prepare the mask for PyTorch's attention (it expects a different format)

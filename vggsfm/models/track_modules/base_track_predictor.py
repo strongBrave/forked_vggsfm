@@ -36,7 +36,7 @@ class BaseTrackerPredictor(nn.Module):
 
         self.stride = stride
         self.latent_dim = latent_dim
-        self.corr_levels = corr_levels
+        self.corr_levels = corr_levels  # 不同大小特征图的数量
         self.corr_radius = corr_radius
         self.hidden_size = hidden_size
         self.fine = fine
@@ -45,7 +45,7 @@ class BaseTrackerPredictor(nn.Module):
         self.transformer_dim = (
             self.corr_levels * (self.corr_radius * 2 + 1) ** 2
             + self.latent_dim * 2
-        )
+        ) # corrlated之后的维度
 
         self.efficient_corr = cfg.MODEL.TRACK.efficient_corr
 
@@ -101,17 +101,17 @@ class BaseTrackerPredictor(nn.Module):
 
         # Init with coords as the query points
         # It means the search will start from the position of query points at the reference frames
-        coords = query_points.clone().reshape(B, 1, N, 2).repeat(1, S, 1, 1)
+        coords = query_points.clone().reshape(B, 1, N, 2).repeat(1, S, 1, 1) # [B, S, N, 2]
 
         # Sample/extract the features of the query points in the query frame
-        query_track_feat = sample_features4d(fmaps[:, 0], coords[:, 0])
+        query_track_feat = sample_features4d(fmaps[:, 0], coords[:, 0]) # [B, N, C]
 
         # init track feats by query feats
         track_feats = query_track_feat.unsqueeze(1).repeat(
             1, S, 1, 1
         )  # B, S, N, C
         # back up the init coords
-        coords_backup = coords.clone()
+        coords_backup = coords.clone() # [B, S, N, 2]
 
         # Construct the correlation block
         if self.efficient_corr:
@@ -121,7 +121,7 @@ class BaseTrackerPredictor(nn.Module):
         else:
             fcorr_fn = CorrBlock(
                 fmaps, num_levels=self.corr_levels, radius=self.corr_radius
-            )
+            ) # 计算correlation的block
 
         coord_preds = []
 
@@ -129,41 +129,41 @@ class BaseTrackerPredictor(nn.Module):
         for itr in range(iters):
             # Detach the gradients from the last iteration
             # (in my experience, not very important for performance)
-            coords = coords.detach()
+            coords = coords.detach() # [B, S, N, 2]
 
             # Compute the correlation (check the implementation of CorrBlock)
             if self.efficient_corr:
                 fcorrs = fcorr_fn.sample(coords, track_feats)
             else:
-                fcorr_fn.corr(track_feats)
-                fcorrs = fcorr_fn.sample(coords)  # B, S, N, corrdim
+                fcorr_fn.corr(track_feats) # 先与image_features算相似度，再插值找(2r+1)**2
+                fcorrs = fcorr_fn.sample(coords)  # B, S, N, corrdim #
 
             corrdim = fcorrs.shape[3]
 
-            fcorrs_ = fcorrs.permute(0, 2, 1, 3).reshape(B * N, S, corrdim)
+            fcorrs_ = fcorrs.permute(0, 2, 1, 3).reshape(B * N, S, corrdim) 
 
             # Movement of current coords relative to query points
             flows = (
                 (coords - coords[:, 0:1])
                 .permute(0, 2, 1, 3)
                 .reshape(B * N, S, 2)
-            )
+            ) # [B*N, S, 2]
 
             flows_emb = get_2d_embedding(
                 flows, self.flows_emb_dim, cat_coords=False
-            )
+            ) # [B*N, S, embed_dim]
 
             # (In my trials, it is also okay to just add the flows_emb instead of concat)
-            flows_emb = torch.cat([flows_emb, flows], dim=-1)
+            flows_emb = torch.cat([flows_emb, flows], dim=-1) # [B*N, S, embed_dim+2]
 
             track_feats_ = track_feats.permute(0, 2, 1, 3).reshape(
                 B * N, S, self.latent_dim
-            )
+            ) # [B*N, S, latent_dim]
 
             # Concatenate them as the input for the transformers
             transformer_input = torch.cat(
                 [flows_emb, fcorrs_, track_feats_], dim=2
-            )
+            ) # [B*N, S, transformer_dim]
 
             if transformer_input.shape[2] < self.transformer_dim:
                 # pad the features to match the dimension

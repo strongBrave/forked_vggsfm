@@ -352,10 +352,10 @@ class CorrBlock:
         self.fmaps_pyramid = []
         self.multiple_track_feats = multiple_track_feats
 
-        self.fmaps_pyramid.append(fmaps)
-        for i in range(self.num_levels - 1):
+        self.fmaps_pyramid.append(fmaps) # 这个fmaps经过backbone提取特征后的特征图
+        for i in range(self.num_levels - 1): # 用avg_pool2d来downsample特征图（每次1/2）
             fmaps_ = fmaps.reshape(B * S, C, H, W)
-            fmaps_ = F.avg_pool2d(fmaps_, 2, stride=2)
+            fmaps_ = F.avg_pool2d(fmaps_, 2, stride=2) # H，W各缩小1/2
             _, _, H, W = fmaps_.shape
             fmaps = fmaps_.reshape(B, S, C, H, W)
             self.fmaps_pyramid.append(fmaps)
@@ -375,18 +375,18 @@ class CorrBlock:
             dy = torch.linspace(-r, r, 2 * r + 1)
             delta = torch.stack(
                 torch.meshgrid(dy, dx, indexing="ij"), axis=-1
-            ).to(coords.device)
+            ).to(coords.device) # [2r+1, 2r+1, 2] 坐标索引
 
             centroid_lvl = coords.reshape(B * S * N, 1, 1, 2) / 2**i
             delta_lvl = delta.view(1, 2 * r + 1, 2 * r + 1, 2)
-            coords_lvl = centroid_lvl + delta_lvl
+            coords_lvl = centroid_lvl + delta_lvl # [B*S*N, 2r+1, 2r+1, 2]
 
             corrs = bilinear_sampler(
                 corrs.reshape(B * S * N, 1, H, W),
                 coords_lvl,
                 padding_mode=self.padding_mode,
-            )
-            corrs = corrs.view(B, S, N, -1)
+            ) # [B*S*N, 1, 2r+1, 2r+1]
+            corrs = corrs.view(B, S, N, -1) # [B, S, N, (2r+1)**2]
 
             out_pyramid.append(corrs)
 
@@ -406,11 +406,11 @@ class CorrBlock:
 
         self.corrs_pyramid = []
         for i, fmaps in enumerate(self.fmaps_pyramid):
-            *_, H, W = fmaps.shape
+            *_, H, W = fmaps.shape # [B, S, C, H, W]
             fmap2s = fmaps.view(B, S, C, H * W)  # B S C H W ->  B S C (H W)
             if self.multiple_track_feats:
                 fmap1 = targets_split[i]
-            corrs = torch.matmul(fmap1, fmap2s)
+            corrs = torch.matmul(fmap1, fmap2s) # [B, S, C, H*W]
             corrs = corrs.view(B, S, N, H, W)  # B S N (H W) -> B S N H W
             corrs = corrs / torch.sqrt(torch.tensor(C).float())
             self.corrs_pyramid.append(corrs)
@@ -423,14 +423,14 @@ class EfficientCorrBlock:
         self.radius = radius
         self.fmaps_pyramid = []
         self.fmaps_pyramid.append(fmaps)
-        for i in range(self.num_levels - 1):
+        for i in range(self.num_levels - 1): # 用avg_pool2d来downsample特征图（每次1/2）
             fmaps_ = fmaps.reshape(B * S, C, H, W)
-            fmaps_ = F.avg_pool2d(fmaps_, 2, stride=2)
+            fmaps_ = F.avg_pool2d(fmaps_, 2, stride=2) # H，W各缩小1/2
             _, _, H, W = fmaps_.shape
             fmaps = fmaps_.reshape(B, S, C, H, W)
             self.fmaps_pyramid.append(fmaps)
 
-    def sample(self, coords, target):
+    def sample(self, coords, target): # target是track_features [B, S, N, C]
         r = self.radius
         device = coords.device
         B, S, N, D = coords.shape

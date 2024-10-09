@@ -59,13 +59,13 @@ class CameraPredictor(nn.Module):
         self.pose_encoding_type = pose_encoding_type
 
         if self.pose_encoding_type == "absT_quaR_OneFL":
-            self.target_dim = 8
+            self.target_dim = 8 # target_dim代表表示相机的维度大小（旋转四元数4 + 平移3 + 焦距1 = 8）
         if self.pose_encoding_type == "absT_quaR_logFL":
             self.target_dim = 9
 
         self.backbone = self.get_backbone(backbone)
 
-        for param in self.backbone.parameters():
+        for param in self.backbone.parameters(): # 摄像机预测transformer网络不更新backbone
             param.requires_grad = False
 
         self.input_transform = Mlp(
@@ -76,7 +76,7 @@ class CameraPredictor(nn.Module):
         )
 
         # sine and cosine embed for camera parameters
-        self.embed_pose = PoseEmbedding(
+        self.embed_pose = PoseEmbedding( # 转换为hidden_size
             target_dim=self.target_dim,
             n_harmonic_functions=(hidden_size // self.target_dim) // 2,
             append_input=False,
@@ -164,7 +164,7 @@ class CameraPredictor(nn.Module):
             )
         else:
             rgb_feat = rgb_feat_init
-            B, S, C = rgb_feat.shape
+            B, S, C = rgb_feat.shape # S应该为每一个batch有多少张照片
 
         if preliminary_cameras is not None:
             # Init the pred_pose_enc by preliminary_cameras
@@ -172,7 +172,7 @@ class CameraPredictor(nn.Module):
                 camera_to_pose_encoding(
                     preliminary_cameras,
                     pose_encoding_type=self.pose_encoding_type,
-                )
+                ) # 将旋转矩阵转变为四元数，并且clamp焦距，加入平移向量
                 .reshape(B, S, -1)
                 .to(rgb_feat.dtype)
             )
@@ -199,9 +199,9 @@ class CameraPredictor(nn.Module):
             delta_pred_pose_enc = delta[..., : self.target_dim]
             delta_feat = delta[..., self.target_dim :]
 
-            rgb_feat = self.ffeat_updater(self.norm(delta_feat)) + rgb_feat
+            rgb_feat = self.ffeat_updater(self.norm(delta_feat)) + rgb_feat # 更新图像特征
 
-            pred_pose_enc = pred_pose_enc + delta_pred_pose_enc
+            pred_pose_enc = pred_pose_enc + delta_pred_pose_enc # 更新相机表示
 
             # Residual connection
             rgb_feat = (rgb_feat + rgb_feat_init) / 2
@@ -235,8 +235,8 @@ class CameraPredictor(nn.Module):
         else:
             raise NotImplementedError(f"Backbone '{backbone}' not implemented")
 
-    def _resnet_normalize_image(self, img: torch.Tensor) -> torch.Tensor:
-        return (img - self._resnet_mean) / self._resnet_std
+    def _resnet_normalize_image(self, img: torch.Tensor) -> torch.Tensor: # 标准化照片
+        return (img - self._resnet_mean) / self._resnet_std # [1, 3, 1, 1]
 
     def get_2D_image_features(self, reshaped_image, batch_size):
         # Get the 2D image features
@@ -246,7 +246,7 @@ class CameraPredictor(nn.Module):
                 (self.down_size, self.down_size),
                 mode="bilinear",
                 align_corners=True,
-            )
+            ) # 调整图片大小
 
         with torch.no_grad():
             reshaped_image = self._resnet_normalize_image(reshaped_image)
@@ -254,7 +254,7 @@ class CameraPredictor(nn.Module):
             # B x P x C
             rgb_feat = rgb_feat["x_norm_patchtokens"]
 
-        rgb_feat = self.input_transform(rgb_feat)
+        rgb_feat = self.input_transform(rgb_feat) # z_dim -> hidden_size
         rgb_feat = self.norm(rgb_feat)
 
         rgb_feat = rearrange(rgb_feat, "(b s) p c -> b s p c", b=batch_size)
@@ -270,10 +270,10 @@ class CameraPredictor(nn.Module):
             rgb_feat.device
         )
 
-        rgb_feat = rgb_feat + pos_embed
+        rgb_feat = rgb_feat + pos_embed # [B, S, P, C]
 
         # register for pose
-        pose_token = self.pose_token.expand(B, S, -1, -1)
+        pose_token = self.pose_token.expand(B, S, -1, -1) # [B, S, 1, hidden_size]
         rgb_feat = torch.cat([pose_token, rgb_feat], dim=-2)
 
         B, S, P, C = rgb_feat.shape
@@ -281,7 +281,7 @@ class CameraPredictor(nn.Module):
         for idx in range(self.att_depth):
             # self attention
             rgb_feat = rearrange(rgb_feat, "b s p c -> (b s) p c", b=B, s=S)
-            rgb_feat = self.self_att[idx](rgb_feat)
+            rgb_feat = self.self_att[idx](rgb_feat) # 自注意力
             rgb_feat = rearrange(rgb_feat, "(b s) p c -> b s p c", b=B, s=S)
 
             feat_0 = rgb_feat[:, 0]
@@ -291,8 +291,8 @@ class CameraPredictor(nn.Module):
             feat_others = rearrange(
                 feat_others, "b m p c -> b (m p) c", m=S - 1, p=P
             )
-            feat_others = self.cross_att[idx](feat_others, feat_0)
-
+            feat_others = self.cross_att[idx](feat_others, feat_0) # 交叉注意力
+            # feat_0 和 feat_others对应了论文中的什么？
             feat_others = rearrange(
                 feat_others, "b (m p) c -> b m p c", m=S - 1, p=P
             )
