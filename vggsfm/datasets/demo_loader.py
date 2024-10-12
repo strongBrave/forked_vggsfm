@@ -50,7 +50,7 @@ class DemoLoader(Dataset):
         Args:
             SCENE_DIR (str): Directory containing the scene data. Assumes the following structure:
                 - images/: Contains all the images in the scene.
-                - (optional) masks/: Contains masks for the images with the same name.
+                note: - (optional) masks/: Contains masks for the images with the same name.
             transform (Optional[transforms.Compose]): Transformations to apply to the images.
             img_size (int): Size to resize images to.
             eval_time (bool): Flag to indicate if it's evaluation time.
@@ -58,6 +58,7 @@ class DemoLoader(Dataset):
             sort_by_filename (bool): Flag to indicate if images should be sorted by filename.
             load_gt (bool): Flag to indicate if ground truth data should be loaded.
                     If True, the gt is assumed to be in the sparse/0 directory, in a colmap format.
+                    colmap format: cameras.bin, images.bin, and points3D.bin
         """
         if not SCENE_DIR:
             raise ValueError("SCENE_DIR cannot be None")
@@ -65,19 +66,19 @@ class DemoLoader(Dataset):
         self.SCENE_DIR = SCENE_DIR
         self.crop_longest = True
         self.load_gt = load_gt
-        self.sort_by_filename = sort_by_filename
+        self.sort_by_filename = sort_by_filename 
         self.sequences = {}
         self.prefix = prefix
 
-        bag_name = os.path.basename(os.path.normpath(SCENE_DIR))
-        self.have_mask = os.path.exists(os.path.join(SCENE_DIR, "masks"))
+        bag_name = os.path.basename(os.path.normpath(SCENE_DIR)) # e.g. cat
+        self.have_mask = os.path.exists(os.path.join(SCENE_DIR, "masks")) # 判断有无mask
 
         img_filenames = glob.glob(os.path.join(SCENE_DIR, f"{self.prefix}/*"))
 
-        if self.sort_by_filename:
-            img_filenames = sorted(img_filenames)
+        if self.sort_by_filename: # 对文件照片排序
+            img_filenames = sorted(img_filenames) 
 
-        self.sequences[bag_name] = self._load_images(img_filenames)
+        self.sequences[bag_name] = self._load_images(img_filenames) # e.g. bag_name=kitchen 返回每个照片的内外参数以及每个图片的编号
         self.sequence_list = sorted(self.sequences.keys())
 
         self.transform = transform or transforms.Compose(
@@ -103,16 +104,17 @@ class DemoLoader(Dataset):
             list: List of dictionaries containing image paths and annotations.
         """
         filtered_data = []
-        calib_dict = self._load_calibration_data() if self.load_gt else {}
+        calib_dict = self._load_calibration_data() if self.load_gt else {} # 每个image的外参，内参，焦距以及cx,cy
 
         for img_name in img_filenames:
             frame_dict = {"img_path": img_name}
             if self.load_gt:
-                anno_dict = calib_dict[os.path.basename(img_name)]
+                anno_dict = calib_dict[os.path.basename(img_name)] # basename选取文件路径最后一个单词
                 frame_dict.update(anno_dict)
             filtered_data.append(frame_dict)
         return filtered_data
 
+    # TODO: modift thid code, cause the R, T, focal_length, pp is given in LineMod dataset.
     def _load_calibration_data(self) -> dict:
         """
         Load calibration data from the colmap reconstruction.
@@ -181,22 +183,22 @@ class DemoLoader(Dataset):
             dict: Batch of data.
         """
         if sequence_name is None:
-            sequence_name = self.sequence_list[index]
+            sequence_name = self.sequence_list[index] # e.g. cat
 
-        metadata = self.sequences[sequence_name]
+        metadata = self.sequences[sequence_name] # 包含很多字典的list, {'img_path', 'R', 'R', 'ff', 'ppxy'}
 
         if ids is None:
-            ids = np.arange(len(metadata))
+            ids = np.arange(len(metadata)) # frame的数量
 
-        annos = [metadata[i] for i in ids]
+        annos = [metadata[i] for i in ids] # annos是包含很多字典的list
 
         if self.sort_by_filename:
             annos = sorted(annos, key=lambda x: x["img_path"])
 
-        images, masks, image_paths = self._load_images_and_masks(annos)
+        images, masks, image_paths = self._load_images_and_masks(annos) # 返回的都是list
         batch = self._prepare_batch(
             sequence_name, metadata, annos, images, masks, image_paths
-        )
+        ) # 
 
         if return_path:
             return batch, image_paths
@@ -222,7 +224,7 @@ class DemoLoader(Dataset):
 
             if self.have_mask:
                 mask_path = image_path.replace(f"/{self.prefix}", "/masks")
-                mask = Image.open(mask_path).convert("L")
+                mask = Image.open(mask_path).convert("L") # 转换为灰度图，单通道
                 masks.append(mask)
         return images, masks, image_paths
 
@@ -244,8 +246,8 @@ class DemoLoader(Dataset):
 
         Args:
             sequence_name (str): Name of the sequence.
-            metadata (list): List of metadata for the sequence.
-            annos (list): List of annotations for the sequence.
+            metadata (list): List of metadata for the sequence. 包含了annos，长度为frame的数量S
+            annos (list): List of annotations for the sequence. 保存了image_names
             images (list): List of images for the sequence.
             masks (list): List of masks for the sequence.
             image_paths (list): List of image paths for the sequence.
@@ -259,14 +261,14 @@ class DemoLoader(Dataset):
             {}
         )  # Dictionary to store original images before any transformations
 
-        if self.load_gt:
-            new_fls, new_pps = [], []
+        if self.load_gt: # 要load ground-truth point
+            new_fls, new_pps = [], [] # 焦距，中心点
 
         for i, (anno, image) in enumerate(zip(annos, images)):
             mask = masks[i] if self.have_mask else None
 
             # Store the original image in the dictionary with the basename of the image path as the key
-            original_images[os.path.basename(image_paths[i])] = np.array(image)
+            original_images[os.path.basename(image_paths[i])] = np.array(image) # e.g. 001
 
             # Transform the image and mask, and get crop parameters and bounding box
             (image_transformed, mask_transformed, crop_paras, bbox) = (
@@ -278,13 +280,14 @@ class DemoLoader(Dataset):
                     transform=self.transform,
                 )
             )
+
             images_transformed.append(image_transformed)
             if mask_transformed is not None:
                 masks_transformed.append(mask_transformed)
             crop_parameters.append(crop_paras)
 
             if self.load_gt:
-                bbox_xywh = torch.FloatTensor(bbox_xyxy_to_xywh(bbox))
+                bbox_xywh = torch.FloatTensor(bbox_xyxy_to_xywh(bbox)) # 转换为左上角xy坐标加上bbox的wh
                 (focal_length_cropped, principal_point_cropped) = (
                     adjust_camera_to_bbox_crop_(
                         anno["focal_length"],
@@ -301,9 +304,9 @@ class DemoLoader(Dataset):
                         torch.FloatTensor([self.img_size, self.img_size]),
                     )
                 )
-                new_fls.append(new_focal_length)
+                new_fls.append(new_focal_length) # 因为照片被裁减了，所以焦距和pps要发生变化
                 new_pps.append(new_principal_point)
-
+                # NOTE: new_fls, new_pps 是NDC Space 中的坐标 [-1, 1]
         images = torch.stack(images_transformed)
         masks = torch.stack(masks_transformed) if self.have_mask else None
 
@@ -353,7 +356,7 @@ class DemoLoader(Dataset):
         batch = {"rawR": batchR.clone(), "rawT": batchT.clone()}
 
         # From OPENCV/COLMAP to PT3D
-        batchR = batchR.clone().permute(0, 2, 1)
+        batchR = batchR.clone().permute(0, 2, 1) # 转置操作
         batchT = batchT.clone()
         batchR[:, :, :2] *= -1
         batchT[:, :2] *= -1
@@ -456,14 +459,14 @@ def pad_and_resize_image(
     if transform is None:
         transform = transforms.Compose(
             [transforms.ToTensor(), transforms.Resize(img_size, antialias=True)]
-        )
+        ) # NOTE: ToTensor()会做归一化操作
 
     w, h = image.width, image.height
-    if crop_longest:
+    if crop_longest:  # 如果true，则将图形裁剪为max(w, h)的正方形，多加的区域用pad
         crop_dim = max(h, w)
         top = (h - crop_dim) // 2
         left = (w - crop_dim) // 2
-        bbox = np.array([left, top, left + crop_dim, top + crop_dim])
+        bbox = np.array([left, top, left + crop_dim, top + crop_dim]) # 计算bbox的两个顶点
     else:
         assert bbox_anno is not None
         bbox = np.array(bbox_anno)
@@ -471,8 +474,9 @@ def pad_and_resize_image(
     crop_paras = calculate_crop_parameters(image, bbox, crop_dim, img_size)
 
     # Crop image by bbox
-    image = _crop_image(image, bbox)
-    image_transformed = transform(image).clamp(0.0, 1.0)
+    image = _crop_image(image, bbox) # 先将image crop成正方形
+    # QUESTION: Why force the RGB image to the range of [0, 1] ?
+    image_transformed = transform(image).clamp(0.0, 1.0) # 再将 image transfomer成指定的size
 
     if mask is not None:
         mask = _crop_image(mask, bbox)
@@ -489,7 +493,7 @@ def _crop_image(image, bbox, white_bg=False):
 
     Args:
         image (PIL.Image.Image): Image to be cropped.
-        bbox (np.array): Bounding box for the crop.
+        bbox (np.array): Bounding box for the crop. [left, top, right, bottom]
         white_bg (bool): Flag to indicate if the background should be white.
 
     Returns:

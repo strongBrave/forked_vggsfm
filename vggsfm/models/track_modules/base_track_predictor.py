@@ -212,14 +212,14 @@ class BaseTrackerPredictor(nn.Module):
             coords = coords + delta_coords_.reshape(B, N, S, 2).permute(
                 0, 2, 1, 3
             )
-
-            # Force coord0 as query
+            
+            # IMPORTANT: Force coord0 as query
             # because we assume the query points should not be changed
             coords[:, 0] = coords_backup[:, 0]
 
             # The predicted tracks are in the original image scale
             if down_ratio > 1:
-                coord_preds.append(coords * self.stride * down_ratio)
+                coord_preds.append(coords * self.stride * down_ratio) # 还原回去
             else:
                 coord_preds.append(coords * self.stride)
 

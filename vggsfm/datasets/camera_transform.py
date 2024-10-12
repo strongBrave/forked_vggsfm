@@ -31,7 +31,7 @@ def bbox_xyxy_to_xywh(xyxy):
 
 
 def adjust_camera_to_bbox_crop_(
-    fl, pp, image_size_wh: torch.Tensor, clamp_bbox_xywh: torch.Tensor
+    fl, pp, image_size_wh: torch.Tensor, clamp_bbox_xywh: torch.Tensor # fl为焦距，
 ):
     focal_length_px, principal_point_px = _convert_ndc_to_pixels(
         fl, pp, image_size_wh

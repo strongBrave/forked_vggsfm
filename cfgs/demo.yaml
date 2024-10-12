@@ -26,7 +26,7 @@ fine_tracking: True
 
 camera_type: "SIMPLE_PINHOLE"   # optional: ["SIMPLE_PINHOLE", "SIMPLE_RADIAL"]
 
-load_gt: False
+load_gt: False # load gt camera pose
 viz_visualize: False
 gr_visualize: False
 

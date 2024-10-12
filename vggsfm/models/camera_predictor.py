@@ -84,7 +84,7 @@ class CameraPredictor(nn.Module):
 
         self.pose_token = nn.Parameter(
             torch.zeros(1, 1, 1, hidden_size)
-        )  # register
+        )  # register， 表明哪一个注意力向量去代表预测的内容，如同ViT中的class token
 
         self.pose_branch = Mlp(
             in_features=hidden_size,
@@ -95,7 +95,7 @@ class CameraPredictor(nn.Module):
 
         self.ffeat_updater = nn.Sequential(
             nn.Linear(hidden_size, hidden_size), nn.GELU()
-        )
+        ) # 对 delta feat更新的模块
 
         self.self_att = nn.ModuleList(
             [
@@ -107,7 +107,7 @@ class CameraPredictor(nn.Module):
                 )
                 for _ in range(self.att_depth)
             ]
-        )
+        ) # 自注意力模块
 
         self.cross_att = nn.ModuleList(
             [
@@ -116,7 +116,7 @@ class CameraPredictor(nn.Module):
                 )
                 for _ in range(self.att_depth)
             ]
-        )
+        ) # 交叉注意力模块
 
         self.trunk = nn.Sequential(
             *[
@@ -128,7 +128,7 @@ class CameraPredictor(nn.Module):
                 )
                 for _ in range(trunk_depth)
             ]
-        )
+        ) 
 
         self.gamma = 0.8
 
@@ -239,8 +239,8 @@ class CameraPredictor(nn.Module):
         return (img - self._resnet_mean) / self._resnet_std # [1, 3, 1, 1]
 
     def get_2D_image_features(self, reshaped_image, batch_size):
-        # Get the 2D image features
-        if reshaped_image.shape[-1] != self.down_size:
+        # Get the 2D image features 
+        if reshaped_image.shape[-1] != self.down_size: # downsample到指定的size
             reshaped_image = F.interpolate(
                 reshaped_image,
                 (self.down_size, self.down_size),

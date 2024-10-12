@@ -38,17 +38,18 @@ def demo_fn(cfg: DictConfig):
 
     # Load Data
     test_dataset = DemoLoader(
-        SCENE_DIR=cfg.SCENE_DIR,
+        SCENE_DIR=cfg.SCENE_DIR, 
         img_size=cfg.img_size,
         normalize_cameras=False,
         load_gt=cfg.load_gt,
     )
 
-    sequence_list = test_dataset.sequence_list
+    sequence_list = test_dataset.sequence_list # 有几种种类, e.g. [cat, mug, ...]
 
-    seq_name = sequence_list[0]  # Run on one Scene
+    seq_name = sequence_list[0]  # Run on one Scene, e.g. kitchen
 
     # Load the data for the selected sequence
+    # todo: watch
     batch, image_paths = test_dataset.get_data(
         sequence_name=seq_name, return_path=True
     )
@@ -58,6 +59,7 @@ def demo_fn(cfg: DictConfig):
     ]  # which is also cfg.SCENE_DIR for DemoLoader
 
     images = batch["image"]
+    # IMPORTANT: MASK
     masks = batch["masks"] if batch["masks"] is not None else None
     crop_params = (
         batch["crop_params"] if batch["crop_params"] is not None else None

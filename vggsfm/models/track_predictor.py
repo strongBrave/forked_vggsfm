@@ -62,9 +62,9 @@ class TrackerPredictor(nn.Module):
 
     def forward(
         self,
-        images,
-        query_points,
-        fmaps=None,
+        images, # [B, S, 3, H, W]
+        query_points, # [B, N, 2]
+        fmaps=None, # [B, S, C, H, W]
         coarse_iters=6,
         inference=True,
         fine_tracking=True,
@@ -89,13 +89,13 @@ class TrackerPredictor(nn.Module):
             torch.cuda.empty_cache()
 
         # Coarse prediction
-        coarse_pred_track_lists, pred_vis = self.coarse_predictor(
-            query_points=query_points,
+        coarse_pred_track_lists, pred_vis = self.coarse_predictor( 
+            query_points=query_points, # 这个函数对应于 base_tracker_predictor中的forward
             fmaps=fmaps,
             iters=coarse_iters,
             down_ratio=self.coarse_down_ratio,
         )
-        coarse_pred_track = coarse_pred_track_lists[-1]
+        coarse_pred_track = coarse_pred_track_lists[-1] # [B, S, N, 2] 最后一个是iterative update后最新的一个
 
         if inference:
             torch.cuda.empty_cache()

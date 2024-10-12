@@ -28,7 +28,7 @@ def refine_track(
     coarse_pred,
     compute_score=False,
     pradius=15,
-    sradius=2,
+    sradius=2, # QUESTION：sradius是什么
     fine_iters=6,
     cfg=None,
 ):
@@ -37,10 +37,10 @@ def refine_track(
     Check https://arxiv.org/abs/2312.04563 for more details.
 
     Args:
-        images (torch.Tensor): The images to be tracked.
+        images (torch.Tensor): The images to be tracked. [B, S, 3, H, W]
         fine_fnet (nn.Module): The fine feature network.
         fine_tracker (nn.Module): The fine track predictor.
-        coarse_pred (torch.Tensor): The coarse predictions of tracks.
+        coarse_pred (torch.Tensor): The coarse predictions of tracks. [B, S, N, 2]
         compute_score (bool, optional): Whether to compute the score. Defaults to False.
         pradius (int, optional): The radius of a patch. Defaults to 15.
         sradius (int, optional): The search radius. Defaults to 2.
@@ -96,14 +96,14 @@ def refine_track(
         )
 
     # Floor the coarse predictions to get integers and save the fractional/decimal
-    track_int = coarse_pred.floor().int()
+    track_int = coarse_pred.floor().int() # [B, S, N, 2]
     track_frac = coarse_pred - track_int
 
     # Note the points represent the center of patches
     # now we get the location of the top left corner of patches
     # because the ouput of pytorch unfold are indexed by top left corner
-    topleft = track_int - pradius
-    topleft_BSN = topleft.clone()
+    topleft = track_int - pradius # [B, S, N, 2]
+    topleft_BSN = topleft.clone() # top left coordniates relative to the image top-left corner
 
     # clamp the values so that we will not go out of indexes
     # NOTE: (VERY IMPORTANT: This operation ASSUMES H=W).
@@ -116,7 +116,7 @@ def refine_track(
     # Prepare batches for indexing, shape: (B*S)xN
     batch_indices = (
         torch.arange(B * S)[:, None].expand(-1, N).to(content_to_extract.device)
-    )
+    ) # [B*S, N]
 
     # Extract image patches based on top left corners
     # extracted_patches: (B*S) x N x C_in x Psize x Psize
@@ -135,14 +135,14 @@ def refine_track(
 
     # reshape back to B x S x N x C_out x Psize x Psize
     patch_feat = patch_feat.reshape(B, S, N, C_out, psize, psize)
-    patch_feat = rearrange(patch_feat, "b s n c p q -> (b n) s c p q")
+    patch_feat = rearrange(patch_feat, "b s n c p q -> (b n) s c p q") # [B*N, S, C, Psize, Psize]
 
     # Prepare for the query points for fine tracker
-    # They are relative to the patch left top corner,
+    # NOTE: They are relative to the patch left top corner,
     # instead of the image top left corner now
-    # patch_query_points: N x 1 x 2
+    # patch_query_points: N x 1 x 2, N represents the number of patchs
     # only 1 here because for each patch we only have 1 query point
-    patch_query_points = track_frac[:, 0] + pradius
+    patch_query_points = track_frac[:, 0] + pradius # [B, N, 2]
     patch_query_points = patch_query_points.reshape(B * N, 2).unsqueeze(1)
 
     # Feed the PATCH query points and tracks into fine tracker
@@ -151,16 +151,16 @@ def refine_track(
         fmaps=patch_feat,
         iters=fine_iters,
         return_feat=True,
-    )
+    ) # query_point_feat是直接从backbone处理图像之后经过双线性插值得到的特征向量，没有经过transformer
 
     # relative the patch top left
     fine_pred_track = fine_pred_track_lists[-1].clone()
 
-    # From (relative to the patch top left) to (relative to the image top left)
+    # NOTE: From (relative to the patch top left) to (relative to the image top left)
     for idx in range(len(fine_pred_track_lists)):
         fine_level = rearrange(
             fine_pred_track_lists[idx], "(b n) s u v -> b s n u v", b=B, n=N
-        )
+        ) # fine_level是相对于patch top-left corner预测出的tracking points的坐标
         fine_level = fine_level.squeeze(-2)
         fine_level = fine_level + topleft_BSN
         fine_pred_track_lists[idx] = fine_level
@@ -173,8 +173,8 @@ def refine_track(
 
     if compute_score:
         score = compute_score_fn(
-            query_point_feat,
-            patch_feat,
+            query_point_feat, # query_point_feat是直接从backbone处理图像之后经过双线性插值得到的特征向量，没有经过transformer
+            patch_feat, # patch_feat也是直接从backbone处理patch之后经过双线性插值得到的特征向量，没有经过transformer
             fine_pred_track,
             sradius,
             psize,
@@ -182,14 +182,14 @@ def refine_track(
             N,
             S,
             C_out,
-        )
+        ) # 计算标准差
 
     return refined_tracks, score
 
 
 def compute_score_fn(
     query_point_feat,
-    patch_feat,
+    patch_feat, # [B, N, S, C, Psize, Psize]
     fine_pred_track,
     sradius,
     psize,
@@ -226,11 +226,11 @@ def compute_score_fn(
     patch_feat_unfold = patch_feat.unfold(4, ssize, 1).unfold(5, ssize, 1)
 
     # Do the same stuffs above, i.e., the same as extracting patches
-    fine_prediction_floor = fine_pred_track.floor().int()
+    fine_prediction_floor = fine_pred_track.floor().int() # [B, S, N, 2]
     fine_level_floor_topleft = fine_prediction_floor - sradius
 
     # Clamp to ensure the smaller patch is valid
-    fine_level_floor_topleft = fine_level_floor_topleft.clamp(0, psize - ssize)
+    fine_level_floor_topleft = fine_level_floor_topleft.clamp(0, psize - ssize) # []
     fine_level_floor_topleft = fine_level_floor_topleft.squeeze(2)
 
     # Prepare the batch indices and xy locations
@@ -248,18 +248,19 @@ def compute_score_fn(
         B * S * N, C_out, psize - sradius * 2, psize - sradius * 2, ssize, ssize
     )
 
-    # Note again, according to pytorch convention
+    # Note: again, according to pytorch convention
     # x_indices cooresponds to [..., 1] and y_indices cooresponds to [..., 0]
     reference_frame_feat = reference_frame_feat[
         batch_indices_score, :, x_indices, y_indices
     ]
+
     reference_frame_feat = reference_frame_feat.reshape(
         B, S, N, C_out, ssize, ssize
     )
     # pick the frames other than the first one, so we have S-1 frames here
     reference_frame_feat = reference_frame_feat[:, 1:].reshape(
         B * (S - 1) * N, C_out, ssize * ssize
-    )
+    ) # reference_frame_feat每个patch有一个，相当于是围绕fine_pred_track一个小的SxS的patch feature，去掉了第一个图的
 
     # Compute similarity
     sim_matrix = torch.einsum(
@@ -275,7 +276,7 @@ def compute_score_fn(
     coords_normalized = dsnt.spatial_expectation2d(heatmap[None], True)[0]
     grid_normalized = create_meshgrid(
         ssize, ssize, normalized_coordinates=True, device=heatmap.device
-    ).reshape(1, -1, 2)
+    ).reshape(1, -1, 2) # [1, ssize*ssize, 2]
 
     var = (
         torch.sum(

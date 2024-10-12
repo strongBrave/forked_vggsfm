@@ -43,10 +43,10 @@ class Triangulator(nn.Module):
 
     def forward(
         self,
-        pred_cameras,
-        pred_tracks,
-        pred_vis,
-        images,
+        pred_cameras, # 预测的摄像机
+        pred_tracks, # 预测的tracks
+        pred_vis, # 预测的可见度
+        images, # 测试照片
         preliminary_dict,
         pred_score=None,
         init_max_reproj_error=0.5,
