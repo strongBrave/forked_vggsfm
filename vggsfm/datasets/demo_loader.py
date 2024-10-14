@@ -224,6 +224,7 @@ class DemoLoader(Dataset):
 
             if self.have_mask:
                 mask_path = image_path.replace(f"/{self.prefix}", "/masks")
+                mask_path = image_path.replace("jpg", "png") # NOTE: mask为png图片
                 mask = Image.open(mask_path).convert("L") # 转换为灰度图，单通道
                 masks.append(mask)
         return images, masks, image_paths

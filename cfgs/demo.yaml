@@ -18,7 +18,7 @@ extract_color: True
 filter_invalid_frame: True
 
 comple_nonvis: True
-query_frame_num: 3
+query_frame_num: 2
 robust_refine: 2
 BA_iters: 1
 

@@ -86,5 +86,6 @@ def demo_fn(cfg: DictConfig):
 
 
 if __name__ == "__main__":
+    torch.cuda.set_per_process_memory_fraction(0.8, device=0)
     with torch.no_grad():
         demo_fn()
