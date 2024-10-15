@@ -44,6 +44,7 @@ class DemoLoader(Dataset):
         sort_by_filename: bool = True,
         load_gt: bool = False,
         prefix: str = "images",
+        pose_estimation: bool=False
     ):
         """
         Initialize the DemoLoader dataset.
@@ -70,9 +71,13 @@ class DemoLoader(Dataset):
         self.sort_by_filename = sort_by_filename 
         self.sequences = {}
         self.prefix = prefix
+        self.pose_estimation = pose_estimation
 
         bag_name = os.path.basename(os.path.normpath(SCENE_DIR)) # e.g. cat
         self.have_mask = os.path.exists(os.path.join(SCENE_DIR, "masks")) # 判断有无mask
+        intrinsics_path = os.path.join(SCENE_DIR, "intrinsics.npy")
+        if os.path.exists(intrinsics_path):
+            self.trg_intrinsics = torch.from_numpy(np.load(intrinsics_path)) # 需要后续根据crop和resize做变换
 
         img_filenames = glob.glob(os.path.join(SCENE_DIR, f"{self.prefix}/*"))
 
@@ -203,9 +208,9 @@ class DemoLoader(Dataset):
             sequence_name, metadata, annos, images, masks, image_paths
         ) # 
 
-        if return_path:
-            return batch, image_paths
 
+        if return_path and self.pose_estimation:
+            return batch, image_paths, self.trg_intrinsics
         return batch
 
     def _load_images_and_masks(self, annos: list) -> tuple:
@@ -295,7 +300,7 @@ class DemoLoader(Dataset):
             crop_parameters.append(crop_paras)
 
             if self.load_gt:
-                bbox_xywh = torch.FloatTensor(bbox_xyxy_to_xywh(bbox)) # 转换为左上角xy坐标加上bbox的wh
+                bbox_xywh = torch.FloatTensor(bbox_xyxy_to_xywh(bbox)) # 转换为左上角xy坐标加上bbox的wh, 这里的bbox是没有recale过的
                 # print("ff2: ", anno["focal_length"])
                 # print("pp2: ", anno["principal_point"])
                 (focal_length_cropped, principal_point_cropped) = (
@@ -322,6 +327,16 @@ class DemoLoader(Dataset):
 
         if self.load_gt:
             batch.update(self._prepare_gt_camera_batch(annos, new_fls, new_pps))
+        if self.pose_estimation:
+            # update target intrinsic matrix based on crop and resize.
+            s = crop_parameters[0][3]
+            bbx_top_left_afer_scale = crop_parameters[0][4:6]
+            ff = self.trg_intrinsics[[0, 1], [0, 1]].clone()
+            ppxy = self.trg_intrinsics[[0, 1], [2, 2]].clone()
+            new_f = ff * s
+            new_ppxy = s * ppxy - bbx_top_left_afer_scale
+            self.trg_intrinsics[[0, 1], [1, 1]] = new_f
+            self.trg_intrinsics[[0, 1], [2, 2]] = new_ppxy
 
         batch.update(
             {
@@ -431,7 +446,8 @@ def calculate_crop_parameters(image, bbox, crop_dim, img_size):
     # convert to NDC
     # cc = s - 2 * s * crop_center / length
     crop_width = 2 * s * (bbox[2] - bbox[0]) / length
-    bbox_after = bbox / crop_dim * img_size
+    s = img_size / crop_dim # e.g. 1024 / max( w, h)
+    bbox_after = bbox * s 
     crop_parameters = torch.tensor(
         [
             width,

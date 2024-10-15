@@ -42,6 +42,7 @@ def demo_fn(cfg: DictConfig):
         img_size=cfg.img_size,
         normalize_cameras=False,
         load_gt=cfg.load_gt,
+        pose_estimation=cfg.pose_estimation
     )
 
     sequence_list = test_dataset.sequence_list # 有几种种类, e.g. [cat, mug, ...]
@@ -50,7 +51,7 @@ def demo_fn(cfg: DictConfig):
 
     # Load the data for the selected sequence
     # todo: watch
-    batch, image_paths = test_dataset.get_data(
+    batch, image_paths, trg_intrinsics = test_dataset.get_data(
         sequence_name=seq_name, return_path=True
     )
 
@@ -67,11 +68,7 @@ def demo_fn(cfg: DictConfig):
 
     # Cache the original images for visualization, so that we don't need to re-load many times
     original_images = batch["original_images"]
-    # trg_intrinsics = torch.tensor([
-    #     [572.4114, 0., 325.2611],
-    #     [0., 573.57043, 242.04899],
-    #     [0., 0., 1.]])
-    trg_intrinsics=None
+    # trg_intrinsics=None
 
     # Run VGGSfM
     # Both visualization and output writing are performed inside VGGSfMRunner

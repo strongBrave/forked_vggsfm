@@ -1041,12 +1041,22 @@ class VGGSfMRunner:
                 # Rescale the camera parameters
                 pred_params = copy.deepcopy(pycamera.params)
                 real_image_size = crop_params[0, pyimageid][:2]
-                resize_ratio = real_image_size.max() / img_size
+
+                bbx_top_left = crop_params[0, pyimageid][4:6]
+                original_pp = pred_params[1:3]
+
+                resize_ratio = real_image_size.max() / img_size # s的倒数 < 1
                 real_focal = resize_ratio * pred_params[0] # rescale焦距
+                print("bbx_top_left: ", bbx_top_left)
+                print("pred_params: ", original_pp)
+                real_pp = (original_pp + bbx_top_left.cpu().numpy()) * resize_ratio.cpu().numpy()
                 # real_pp = real_image_size.cpu().numpy() // 2
 
+                print("crop_params shape: ", crop_params.shape)
+                print(crop_params[0, 1, :])
+
                 pred_params[0] = real_focal
-                # pred_params[1:3] = real_pp
+                pred_params[1:3] = real_pp
                 pycamera.params = pred_params
                 pycamera.width = real_image_size[0]
                 pycamera.height = real_image_size[1]
