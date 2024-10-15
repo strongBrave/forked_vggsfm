@@ -177,6 +177,7 @@ class VGGSfMRunner:
         query_frame_num=None,
         seq_name=None,
         output_dir=None,
+        trg_intrinsics=None,
     ):
         """
         Executes the full VGGSfM pipeline on a set of input images.
@@ -202,6 +203,8 @@ class VGGSfMRunner:
             seq_name (str, optional): Name of the sequence.
             output_dir (str, optional): Directory to save the output. If not specified,
                 the directory will be named as f"{seq_name}_{timestamp}".
+            trg_intrinsics (torch.Tensor, optional): A tensor representing the target camera 
+                intrinsic matrix with shape 3x3.
         Returns:
             dict: A dictionary containing the predictions from the reconstruction process.
         """
@@ -209,11 +212,13 @@ class VGGSfMRunner:
             now = datetime.datetime.now()
             timestamp = now.strftime("%Y%m%d_%H%M")
             output_dir = f"{seq_name}_{timestamp}"
+        
 
         with torch.no_grad():
             images = move_to_device(images, self.device)
             masks = move_to_device(masks, self.device)
             crop_params = move_to_device(crop_params, self.device)
+            trg_intrinsics = move_to_device(trg_intrinsics, self.device)
 
             # Add batch dimension if necessary
             if len(images.shape) == 4:
@@ -233,8 +238,10 @@ class VGGSfMRunner:
                 query_frame_num=query_frame_num,
                 seq_name=seq_name,
                 output_dir=output_dir,
+                trg_intrinsics=trg_intrinsics,
             )
 
+            print("ultimate-1 intrinsics: ", predictions["intrinsics_opencv"])
             # Save the sparse reconstruction results
             if self.cfg.save_to_disk:
                 self.save_sparse_reconstruction(
@@ -287,6 +294,7 @@ class VGGSfMRunner:
             if self.cfg.gr_visualize:
                 self.visualize_3D_in_gradio(predictions, seq_name, output_dir)
 
+            print("ultimate intrinsics: ", predictions["intrinsics_opencv"])
             return predictions
 
     def sparse_reconstruct(
@@ -300,6 +308,7 @@ class VGGSfMRunner:
         output_dir=None,
         dtype=None,
         back_to_original_resolution=True,
+        trg_intrinsics=None,
     ):
         """
         Perform sparse reconstruction on the given images.
@@ -321,6 +330,8 @@ class VGGSfMRunner:
             seq_name (str): The name of the sequence being processed.
             output_dir (str): The directory to save the output files.
             dtype (torch.dtype): The data type to use for computations.
+            trg_intrinsics (torcg.Tensor): A tensor of shape (3, 3) representing the intrinsic matris of
+                                        target camera.
 
             NOTE During inference we force B=1 now.
         Returns:
@@ -511,6 +522,8 @@ class VGGSfMRunner:
                 extract_color=self.cfg.extract_color,
                 robust_refine=self.cfg.robust_refine,
                 camera_type=self.cfg.camera_type,
+                trg_intrinsics=trg_intrinsics,
+                pose_estimation=self.cfg.pose_estimation,
             )
 
         
@@ -1029,11 +1042,11 @@ class VGGSfMRunner:
                 pred_params = copy.deepcopy(pycamera.params)
                 real_image_size = crop_params[0, pyimageid][:2]
                 resize_ratio = real_image_size.max() / img_size
-                real_focal = resize_ratio * pred_params[0]
-                real_pp = real_image_size.cpu().numpy() // 2
+                real_focal = resize_ratio * pred_params[0] # rescale焦距
+                # real_pp = real_image_size.cpu().numpy() // 2
 
                 pred_params[0] = real_focal
-                pred_params[1:3] = real_pp
+                # pred_params[1:3] = real_pp
                 pycamera.params = pred_params
                 pycamera.width = real_image_size[0]
                 pycamera.height = real_image_size[1]

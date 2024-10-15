@@ -67,6 +67,11 @@ def demo_fn(cfg: DictConfig):
 
     # Cache the original images for visualization, so that we don't need to re-load many times
     original_images = batch["original_images"]
+    # trg_intrinsics = torch.tensor([
+    #     [572.4114, 0., 325.2611],
+    #     [0., 573.57043, 242.04899],
+    #     [0., 0., 1.]])
+    trg_intrinsics=None
 
     # Run VGGSfM
     # Both visualization and output writing are performed inside VGGSfMRunner
@@ -78,6 +83,7 @@ def demo_fn(cfg: DictConfig):
         crop_params=crop_params,
         seq_name=seq_name,
         output_dir=output_dir,
+        trg_intrinsics=trg_intrinsics
     )
 
     # print(torch.argwhere(masks[0, 0] == 0).shape)

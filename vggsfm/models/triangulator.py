@@ -58,6 +58,8 @@ class Triangulator(nn.Module):
         robust_refine=2,
         extract_color=True,
         camera_type="SIMPLE_PINHOLE",
+        trg_intrinsics=None,
+        pose_estimation=False,
     ):
         """
         Conduct triangulation and bundle adjustment given
@@ -86,7 +88,7 @@ class Triangulator(nn.Module):
             # intrinsics: B x S x 3 x 3
             # focal_length, principal_point : B x S x 2
 
-            extrinsics, intrinsics = get_EFP(pred_cameras, image_size, B, S)
+            extrinsics, intrinsics = get_EFP(pred_cameras, image_size, B, S, False, trg_intrinsics)
 
             extrinsics = extrinsics.double()
             inlier_fmat = preliminary_dict["fmat_inlier_mask"]
@@ -94,7 +96,7 @@ class Triangulator(nn.Module):
             # Remove B dim
             # To simplify the code, now we only support B==1 during inference
             extrinsics = extrinsics[0]
-            intrinsics = intrinsics[0]
+            intrinsics = intrinsics[0].clone()
             pred_tracks = pred_tracks[0]
             pred_vis = pred_vis[0]
             pred_score = pred_score[0]
@@ -110,7 +112,7 @@ class Triangulator(nn.Module):
             extra_params = None
             if camera_type == "SIMPLE_RADIAL":
                 extra_params = torch.zeros_like(extrinsics[:, 0, 0:1])
-
+            # print("7 intrinsics: ", intrinsics) # right
             tracks_normalized = cam_from_img(pred_tracks, intrinsics)
             # Visibility inlier
             inlier_vis = pred_vis > 0.05  # TODO: avoid hardcoded
@@ -157,9 +159,10 @@ class Triangulator(nn.Module):
                 shared_camera=shared_camera,
                 init_max_reproj_error=init_max_reproj_error,
                 camera_type=camera_type,
+                pose_estimation=pose_estimation
             )
             print("Finished init BA")
-
+            print("6 intrinsics: ", intrinsics)
             # Given we have a well-conditioned point cloud,
             # we can optimize all the cameras by absolute pose refinement as in
             # https://github.com/colmap/colmap/blob/4ced4a5bc72fca93a2ffaea2c7e193bc62537416/src/colmap/estimators/pose.cc#L207
@@ -182,7 +185,7 @@ class Triangulator(nn.Module):
                 )
             )
             print("Finished init refine pose")  
-            
+            print("5 intrinsics: ", intrinsics)
             (
                 points3D,
                 extrinsics,
@@ -204,7 +207,7 @@ class Triangulator(nn.Module):
                 camera_type=camera_type,
             )
             print("Finished track triangulation and BA")
-
+            print("4 intrinsics: ", intrinsics)
 
             if robust_refine > 0:
                 for refine_idx in range(robust_refine):
@@ -228,7 +231,7 @@ class Triangulator(nn.Module):
                             camera_type=camera_type,
                         )
                     )
-
+                    print("3 intrinsics: ", intrinsics)
                     (
                         points3D,
                         extrinsics,
@@ -248,11 +251,15 @@ class Triangulator(nn.Module):
                         max_reproj_error,
                         shared_camera=shared_camera,
                         camera_type=camera_type,
+                        pose_estimation=pose_estimation
                     )
                     print(f"Finished robust refine {refine_idx}")
-
+                    print("2 intrinsics: ", intrinsics)
             ba_options = pycolmap.BundleAdjustmentOptions()
             ba_options.print_summary = False
+            if pose_estimation:
+                ba_options.refine_focal_length=False
+            
 
             print(f"Running iterative BA by {BA_iters} times")
             for BA_iter in range(BA_iters):
@@ -287,7 +294,7 @@ class Triangulator(nn.Module):
                     ba_options=ba_options,
                     camera_type=camera_type,
                 )
-                
+                print("1 intrinsics: ", intrinsics)
                 print(f"Finished iterative BA {BA_iter}")
                 
                 max_reproj_error = max_reproj_error // 2
@@ -375,6 +382,7 @@ class Triangulator(nn.Module):
         max_reproj_error=4,
         shared_camera=False,
         camera_type="SIMPLE_PINHOLE",
+        pose_estimation=False,
     ):
         """ """
         # Normalize the tracks
@@ -411,6 +419,7 @@ class Triangulator(nn.Module):
                 image_size,
                 shared_camera=shared_camera,
                 camera_type=camera_type,
+                pose_estimation=pose_estimation,
             )
         )
 

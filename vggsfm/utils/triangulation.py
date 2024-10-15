@@ -146,6 +146,7 @@ def init_BA(
     shared_camera=False,
     init_max_reproj_error=0.5,
     camera_type="SIMPLE_PINHOLE",
+    pose_estimation=False,
 ):
     """
     This function first optimizes the init point cloud
@@ -194,6 +195,7 @@ def init_BA(
     # Convert PyTorch tensors to the format of Pycolmap
     # Prepare for the Bundle Adjustment Optimization
     # NOTE although we use pycolmap for BA here, but any BA library should be able to achieve the same result
+    # create a pycolmap Reconstruction object, which contains image, camera, point_3D, tracked_point_2D
     reconstruction = batch_matrix_to_pycolmap(
         toBA_points3D,
         toBA_extrinsics,
@@ -207,7 +209,7 @@ def init_BA(
     )
 
     # Prepare BA options
-    ba_options = prepare_ba_options()
+    ba_options = prepare_ba_options(pose_estimation)
 
     # Conduct BA
     pycolmap.bundle_adjustment(reconstruction, ba_options)
@@ -503,7 +505,7 @@ def init_refine_pose(
     # points3D: P' x 3
     # tracks: SxPx2
     # valid_track_mask_init: P
-
+    print("before refine: ", intrinsics)
     S, _, _ = extrinsics.shape
     _, P, _ = tracks.shape
 
@@ -530,7 +532,7 @@ def init_refine_pose(
     tracks2D = tracks[:, valid_track_mask_init].cpu().numpy()
 
     refoptions = pycolmap.AbsolutePoseRefinementOptions()
-    refoptions.refine_focal_length = True
+    refoptions.refine_focal_length = True # TODO: check this
     refoptions.refine_extra_params = True
     refoptions.print_summary = False
 
@@ -638,7 +640,7 @@ def init_refine_pose(
             refined_extra_params[~valid_frame_mask] = extra_params[
                 ~valid_frame_mask
             ].to(refined_extrinsics.dtype)
-
+    print("after refine: ", refined_intrinsics)
     return (
         refined_extrinsics,
         refined_intrinsics,
@@ -1028,8 +1030,9 @@ def global_BA(
     image_size,
     shared_camera=False,
     camera_type="SIMPLE_PINHOLE",
+    pose_estimation=False,
 ):
-    ba_options = prepare_ba_options()
+    ba_options = prepare_ba_options(pose_estimation)
 
     # triangulated_points
     BA_points = triangulated_points[valid_tracks]

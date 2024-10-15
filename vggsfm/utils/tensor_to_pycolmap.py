@@ -64,6 +64,7 @@ def batch_matrix_to_pycolmap(
     valid_idx = np.nonzero(valid_mask)[0]
 
     # Only add 3D points that have sufficient 2D points
+    # SECTION 1: add 3d point into reconstruction object
     for vidx in valid_idx:
         reconstruction.add_point3D(
             points3d[vidx], pycolmap.Track(), np.zeros(3)
@@ -75,6 +76,7 @@ def batch_matrix_to_pycolmap(
     # frame idx
     for fidx in range(N):
         # set camera
+        # if shared_camera, pycolmap_intri is only initialize once.
         if camera is None or (not shared_camera):
             if camera_type == "SIMPLE_RADIAL":
                 pycolmap_intri = np.array(
@@ -97,12 +99,13 @@ def batch_matrix_to_pycolmap(
                 raise ValueError(
                     f"Camera type {camera_type} is not supported yet"
                 )
-
+            
+            # SECTION 2: add camera
             camera = pycolmap.Camera(
                 model=camera_type,
                 width=image_size[0],
                 height=image_size[1],
-                params=pycolmap_intri,
+                params=pycolmap_intri, # 焦距，px, py，畸变系数
                 camera_id=fidx,
             )
 
@@ -110,6 +113,7 @@ def batch_matrix_to_pycolmap(
             reconstruction.add_camera(camera)
 
         # set image
+        # SECTION 3: add image
         cam_from_world = pycolmap.Rigid3d(
             pycolmap.Rotation3d(extrinsics[fidx][:3, :3]),
             extrinsics[fidx][:3, 3],
@@ -125,6 +129,7 @@ def batch_matrix_to_pycolmap(
 
         point2D_idx = 0
         # NOTE point3D_id start by 1
+        # SECTION 4: map point3D with corresponding 2d tracking point
         for point3D_id in range(1, num_points3D + 1):
             original_track_idx = valid_idx[point3D_id - 1]
 
@@ -179,6 +184,7 @@ def pycolmap_to_batch_matrix(
     max_points3D_id = max(reconstruction.point3D_ids())
     points3D = np.zeros((max_points3D_id, 3))
 
+    # NOTE: point3D_id starts from 1
     for point3D_id in reconstruction.points3D:
         points3D[point3D_id - 1] = reconstruction.points3D[point3D_id].xyz
     points3D = torch.from_numpy(points3D).to(device)
@@ -200,7 +206,7 @@ def pycolmap_to_batch_matrix(
         intrinsics.append(calibration_matrix)
 
         if camera_type == "SIMPLE_RADIAL":
-            extra_params.append(pycam.params[-1])
+            extra_params.append(pycam.params[-1]) # 畸变参数
 
     # Convert lists to torch tensors
     extrinsics = torch.from_numpy(np.stack(extrinsics)).to(device)

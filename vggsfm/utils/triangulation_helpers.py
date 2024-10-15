@@ -623,7 +623,7 @@ def create_intri_matrix(focal_length, principal_point):
     return intri_matrix
 
 
-def prepare_ba_options():
+def prepare_ba_options(pose_estimation=False):
     ba_options_tmp = pycolmap.BundleAdjustmentOptions()
     ba_options_tmp.solver_options.function_tolerance *= 10
     ba_options_tmp.solver_options.gradient_tolerance *= 10
@@ -632,6 +632,8 @@ def prepare_ba_options():
     ba_options_tmp.solver_options.max_num_iterations = 50
     ba_options_tmp.solver_options.max_linear_solver_iterations = 200
     ba_options_tmp.print_summary = False
+    if pose_estimation:
+        ba_options_tmp.refine_focal_length=False # NOTE: shared_camera
     return ba_options_tmp
 
 

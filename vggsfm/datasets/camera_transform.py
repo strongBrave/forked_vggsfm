@@ -36,7 +36,8 @@ def adjust_camera_to_bbox_crop_(
     focal_length_px, principal_point_px = _convert_ndc_to_pixels(
         fl, pp, image_size_wh
     )
-
+    print("ndc_ff: ", focal_length_px)
+    print("ndc_pp: ", principal_point_px)
     principal_point_px_cropped = principal_point_px - clamp_bbox_xywh[:2]
 
     focal_length, principal_point_cropped = _convert_pixels_to_ndc(

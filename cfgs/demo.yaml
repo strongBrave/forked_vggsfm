@@ -11,6 +11,8 @@ img_size: 1024
 
 debug: False
 
+pose_estimation: False # True代表BA不会优化内参参数
+
 
 center_order: False
 mixed_precision: fp16
@@ -24,11 +26,11 @@ BA_iters: 1
 
 fine_tracking: True
 
-camera_type: "SIMPLE_PINHOLE"   # optional: ["SIMPLE_PINHOLE", "SIMPLE_RADIAL"]
+camera_type: "SIMPLE_PINHOLE"   # optional: ["SIMPLE_PINHOLE", "SIMPLE_RADIAL", "PINHOLE"]
 
-load_gt: False # load gt camera pose
+load_gt: True # load gt camera pose
 viz_visualize: False
-gr_visualize: False
+gr_visualize: True
 
 fmat_thres: 4.0
 max_reproj_error: 4.0
@@ -44,7 +46,7 @@ save_to_disk: True
 SCENE_DIR: examples/kitchen
 
 resume_ckpt:  ckpt/vggsfm_v2_0_0.bin
-auto_download_ckpt: True
+auto_download_ckpt: False
 
 query_method: "aliked"
 
