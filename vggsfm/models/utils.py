@@ -48,7 +48,7 @@ def get_EFP(pred_cameras, image_size, B, S, default_focal=False):
     principal_point = torch.zeros_like(focal_length)
 
     focal_length = focal_length * scale / 2
-    principal_point = (image_size[None] - principal_point * scale) / 2
+    principal_point = (image_size[None] - principal_point * scale) / 2 # 默认prinpial_point为图像的中心
 
     Rots = pred_cameras.R.clone()
     Trans = pred_cameras.T.clone()
@@ -93,9 +93,9 @@ def pose_encoding_to_camera(
 
     if pose_encoding_type == "absT_quaR_logFL":
         # 3 for absT, 4 for quaR, 2 for absFL
-        abs_T = pose_encoding_reshaped[:, :3]
+        abs_T = pose_encoding_reshaped[:, :3] # [BN, 3]
         quaternion_R = pose_encoding_reshaped[:, 3:7]
-        R = quaternion_to_matrix(quaternion_R)
+        R = quaternion_to_matrix(quaternion_R) # [BN, 3, 3] column-major
         log_focal_length = pose_encoding_reshaped[:, 7:9]
         # log_focal_length_bias was the hyperparameter
         # to ensure the mean of logFL close to 0 during training
@@ -123,9 +123,9 @@ def pose_encoding_to_camera(
         # I hate coordinate conversion
         R = R.clone()
         abs_T = abs_T.clone()
-        R[:, :, :2] *= -1
+        R[:, :, :2] *= -1 # NOTE: Pytorch3d use the column-major rotation matrix
         abs_T[:, :2] *= -1
-        R = R.permute(0, 2, 1)
+        R = R.permute(0, 2, 1) # transform to row major
 
         extrinsics_4x4 = torch.eye(4, 4).to(R.dtype).to(R.device)
         extrinsics_4x4 = extrinsics_4x4[None].repeat(len(R), 1, 1)

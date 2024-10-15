@@ -42,7 +42,7 @@ class CameraPredictor(nn.Module):
         self,
         hidden_size=768,
         num_heads=8,
-        mlp_ratio=4,
+        mlp_ratio=4, # forward_expansion
         z_dim: int = 768,
         down_size=336,
         att_depth=8,
@@ -154,18 +154,19 @@ class CameraPredictor(nn.Module):
     ):
         """
         reshaped_image: Bx3xHxW. The values of reshaped_image are within [0, 1]
-        preliminary_cameras: cameras in opencv coordinate.
+        preliminary_cameras: cameras in opencv coordinate. (RDF)
         """
 
         if rgb_feat_init is None:
             # Get the 2D image features
             rgb_feat, B, S, C = self.get_2D_image_features(
                 reshaped_image, batch_size
-            )
+            ) # [B, S, 1, C]
         else:
             rgb_feat = rgb_feat_init
             B, S, C = rgb_feat.shape # S应该为每一个batch有多少张照片
 
+        # TODO: maybe needed to be modified
         if preliminary_cameras is not None:
             # Init the pred_pose_enc by preliminary_cameras
             pred_pose_enc = (
@@ -284,13 +285,14 @@ class CameraPredictor(nn.Module):
             rgb_feat = self.self_att[idx](rgb_feat) # 自注意力
             rgb_feat = rearrange(rgb_feat, "(b s) p c -> b s p c", b=B, s=S)
 
-            feat_0 = rgb_feat[:, 0]
+            feat_0 = rgb_feat[:, 0] # pose_token (global feature descriptor)
             feat_others = rgb_feat[:, 1:]
 
             # cross attention
             feat_others = rearrange(
                 feat_others, "b m p c -> b (m p) c", m=S - 1, p=P
             )
+            # intuition here: 将pose_token的全局特征信息融入到patch的局部特征信息
             feat_others = self.cross_att[idx](feat_others, feat_0) # 交叉注意力
             # feat_0 和 feat_others对应了论文中的什么？
             feat_others = rearrange(

@@ -60,7 +60,7 @@ def demo_fn(cfg: DictConfig):
 
     images = batch["image"]
     # IMPORTANT: MASK
-    masks = batch["masks"] if batch["masks"] is not None else None
+    masks = batch["masks"] if batch["masks"] is not None else None # 1 filter out
     crop_params = (
         batch["crop_params"] if batch["crop_params"] is not None else None
     )
@@ -80,6 +80,7 @@ def demo_fn(cfg: DictConfig):
         output_dir=output_dir,
     )
 
+    # print(torch.argwhere(masks[0, 0] == 0).shape)
     print("Demo Finished Successfully")
 
     return True

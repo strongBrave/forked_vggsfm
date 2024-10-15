@@ -629,7 +629,7 @@ class VGGSfMRunner:
         predictions["valid_tracks"] = valid_tracks
         
         predictions["additional_points_dict"] = additional_points_dict
-        
+        print(predictions['extrinsics_opencv'].shape)
         return predictions
 
     def triangulate_extra_points(
