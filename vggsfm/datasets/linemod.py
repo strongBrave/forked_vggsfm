@@ -69,29 +69,42 @@ class DemoLoader(Dataset):
             raise ValueError("SCENE_DIR cannot be None")
 
         self.root_dir = root_dir
-        self.class_dirs = sorted(os.listdir(root_dir))
+        self.cls_dirs = sorted(os.listdir(root_dir))
+        self.cls_dirs.remove(".DS_Store")
+        self.cls_dirs.remove("intrinsics.npy")
+
         self.crop_longest = True
         self.load_gt = load_gt
         self.sort_by_filename = sort_by_filename 
-        self.sequences = {class_name: os.listdir(os.path.join(root_dir, class_name, "images/")) for class_name in self.class_dirs}
+        self.sequences = {class_name: self._load_images(glob.glob(os.path.join(root_dir, class_name, "images/*"))) for class_name in self.cls_dirs}
         self.prefix = prefix
-        self.pose_estimation = pose_estimation
+        self.pose_estimation = pose_estimation # indicate if this is pose_estimation task
+        self.first_pose = True # 控制self.trg_intrinsics更新一次，防止增量更新
+        self.cls_len = [int(len(self.sequences[class_name])) for class_name in self.cls_dirs] # 每个类的照片的个数
 
-        bag_name = os.path.basename(os.path.normpath(SCENE_DIR)) # e.g. cat
-        self.have_mask = os.path.exists(os.path.join(SCENE_DIR, "masks")) # 判断有无mask
+        self.current_cls_idx = 0 # 目前的所在类的下标
+        self.current_cls_name = self.cls_dirs[self.current_cls_idx] # 目前所在类的名字
+        self.current_cls_len = self.cls_len[self.current_cls_idx] # 目前所在类的照片的个数
+        self.out_dir = [os.path.join(root_dir, class_name) for class_name in self.cls_dirs]
+
+        # bag_name = os.path.basename(os.path.normpath(SCENE_DIR)) # e.g. cat
+        self.have_mask = []
+        for cls in self.cls_dirs:
+            self.have_mask.append(os.path.exists(os.path.join(root_dir, cls, "masks"))) # 判断有无mask
+
         intrinsics_path = os.path.join(root_dir, "intrinsics.npy")
         if os.path.exists(intrinsics_path):
             self.trg_intrinsics = torch.from_numpy(np.load(intrinsics_path)) # 需要后续根据crop和resize做变换
-        # print("o1 intrinscis: ", self.trg_intrinsics)
 
-        img_filenames = glob.glob(os.path.join(SCENE_DIR, f"{self.prefix}/*"))
+        # img_filenames = glob.glob(os.path.join(SCENE_DIR, f"{self.prefix}/*"))
 
         if self.sort_by_filename: # 对文件照片排序
-            img_filenames = sorted(img_filenames) 
+            # img_filenames = sorted(img_filenames)
+            self.sequences = {class_name: self._load_images(sorted(glob.glob(os.path.join(root_dir, class_name, "images/*")))) for class_name in self.cls_dirs}
 
-        self.sequences[bag_name] = self._load_images(img_filenames) # e.g. bag_name=kitchen 返回每个照片的内外参数以及每个图片的编号
+        # self.sequences[bag_name] = self._load_images(img_filenames) # e.g. bag_name=kitchen 返回每个照片的内外参数以及每个图片的编号
 
-        self.sequence_list = sorted(self.sequences.keys())
+        # self.sequence_list = sorted(self.sequences.keys()) # sequence_list = class_dirs
 
         self.transform = transform or transforms.Compose(
             [transforms.ToTensor(), transforms.Resize(img_size, antialias=True)]
@@ -104,6 +117,12 @@ class DemoLoader(Dataset):
         self.normalize_cameras = normalize_cameras
 
         print(f"Data size of Sequence: {len(self)}")
+
+    def set_cls_idx(self, cls_idx):
+        self.current_cls_idx = cls_idx
+        self.current_cls_name = self.cls_dirs[cls_idx]
+        self.current_cls_len = self.cls_len[cls_idx]
+        
 
     def _load_images(self, img_filenames: list) -> list:
         """
@@ -160,9 +179,10 @@ class DemoLoader(Dataset):
         return calib_dict
 
     def __len__(self) -> int:
-        return len(self.sequence_list)
+        return self.current_cls_len
+        # return 30
 
-    def __getitem__(self, idx_N: int):
+    def __getitem__(self, index: int):
         """
         Get data for a specific index.
 
@@ -173,14 +193,38 @@ class DemoLoader(Dataset):
             dict: Data for the specified index.
         """
         if self.eval_time:
-            return self.get_data(index=idx_N, ids=None)
+            return self.get_data(index=index, ids=None)
         else:
             raise NotImplementedError("Do not train on Sequence.")
+
+    def _load_image_and_mask(self, anno: dict) -> tuple:
+        """
+        Load images and masks from annotations.
+
+        Args:
+            annos (dict): The annotations specified by the index
+
+        Returns:
+            tuple: Tuple containing image, mask, and image path of the specified index.
+        """
+        
+        image_path = anno["img_path"]
+        image = Image.open(image_path).convert("RGB")
+
+
+        if self.have_mask:
+            mask_path = image_path.replace(f"/{self.prefix}", "/masks")
+            image_path_copy = copy.copy(mask_path)
+            # print("image_path_copy: ", image_path_copy)
+            mask_path = image_path_copy.replace("jpg", "png") # NOTE: mask为png图片
+            # print("mask_path: ", mask_path)
+            mask = Image.open(mask_path).convert("L") # 转换为灰度图，单通道
+
+        return image, mask, image_path
 
     def get_data(
         self,
         index: Optional[int] = None,
-        sequence_name: Optional[str] = None,
         ids: Optional[np.ndarray] = None,
         return_path: bool = False,
     ) -> dict:
@@ -188,7 +232,7 @@ class DemoLoader(Dataset):
         Get data for a specific sequence or index.
 
         Args:
-            index (Optional[int]): Index of the sequence.
+            index (Optional[int]): Index of the image.
             sequence_name (Optional[str]): Name of the sequence.
             ids (Optional[np.ndarray]): Array of indices to retrieve.
             return_path (bool): Flag to indicate if image paths should be returned.
@@ -196,66 +240,34 @@ class DemoLoader(Dataset):
         Returns:
             dict: Batch of data.
         """
-        if sequence_name is None:
-            sequence_name = self.sequence_list[index] # e.g. cat
+        # if sequence_name is None:
+        #     sequence_name = self.sequence_list[index] # e.g. cat
 
-        metadata = self.sequences[sequence_name] # 包含很多字典的list, {'img_path', 'R', 'R', 'ff', 'ppxy'}
-
+        metadata = self.sequences[self.current_cls_name] # 包含很多字典的list, {'img_path', 'R', 'R', 'ff', 'ppxy'}
         if ids is None:
             ids = np.arange(len(metadata)) # frame的数量
 
-        annos = [metadata[i] for i in ids] # annos是包含很多字典的list
+        # annos = [metadata[i] for i in ids] # annos是包含很多字典的list
+        anno = metadata[index] # a dict containing {'img_path', 'R', 'R', 'ff', 'ppxy'}
 
-        if self.sort_by_filename:
-            annos = sorted(annos, key=lambda x: x["img_path"])
+        # if self.sort_by_filename:
+        #     annos = sorted(annos, key=lambda x: x["img_path"])
 
-        images, masks, image_paths = self._load_images_and_masks(annos) # 返回的都是list
-        batch = self._prepare_batch(
-            sequence_name, metadata, annos, images, masks, image_paths
+        image, mask, image_path = self._load_image_and_mask(anno) # 返回是一个image, mask, image_path
+        image, mask, image_path, crop_paras, original_image = self._prepare_batch(
+            anno, image, mask, image_path
         ) # 
 
+        return image, mask, crop_paras, original_image, image_path
 
-        if return_path and self.pose_estimation:
-            return batch, image_paths, self.trg_intrinsics
-        return batch
-
-    def _load_images_and_masks(self, annos: list) -> tuple:
-        """
-        Load images and masks from annotations.
-
-        Args:
-            annos (list): List of annotations.
-
-        Returns:
-            tuple: Tuple containing lists of images, masks, and image paths.
-        """
-        images, masks, image_paths = [], [], []
-        for anno in annos:
-            image_path = anno["img_path"]
-            image = Image.open(image_path).convert("RGB")
-            images.append(image)
-            image_paths.append(image_path)
-
-            if self.have_mask:
-                mask_path = image_path.replace(f"/{self.prefix}", "/masks")
-                image_path_copy = copy.copy(mask_path)
-                # print("image_path_copy: ", image_path_copy)
-                mask_path = image_path_copy.replace("jpg", "png") # NOTE: mask为png图片
-                # print("mask_path: ", mask_path)
-                mask = Image.open(mask_path).convert("L") # 转换为灰度图，单通道
-
-                masks.append(mask)
-        return images, masks, image_paths
 
     def _prepare_batch(
         self,
-        sequence_name: str,
-        metadata: list,
-        annos: list,
-        images: list,
-        masks: list,
-        image_paths: list,
-    ) -> dict:
+        anno: dict,
+        image,
+        mask,
+        image_path,
+    ) -> tuple:
         """
         Prepare a batch of data for a given sequence.
 
@@ -274,92 +286,99 @@ class DemoLoader(Dataset):
         Returns:
             dict: Batch of data containing transformed images, masks, crop parameters, original images, and other relevant information.
         """
-        batch = {"seq_name": sequence_name, "frame_num": len(metadata)}
-        crop_parameters, images_transformed, masks_transformed = [], [], []
-        original_images = (
-            {}
-        )  # Dictionary to store original images before any transformations
+        # batch = {"seq_name": self.current_cls_name, "frame_num": len(metadata)}
+        # crop_parameters, images_transformed, masks_transformed = [], [], []
+        # original_images = (
+        #     {}
+        # )  # Dictionary to store original images before any transformations
 
         if self.load_gt: # 要load ground-truth point
             new_fls, new_pps = [], [] # 焦距，中心点
 
-        for i, (anno, image) in enumerate(zip(annos, images)):
-            mask = masks[i] if self.have_mask else None
+        mask = mask if self.have_mask[self.current_cls_idx] else None
 
-            # Store the original image in the dictionary with the basename of the image path as the key
-            original_images[os.path.basename(image_paths[i])] = np.array(image) # e.g. 001
+        # Store the original image in the dictionary with the basename of the image path as the key
+        original_image = {os.path.basename(image_path): np.array(image)} # e.g. 001
 
-            # Transform the image and mask, and get crop parameters and bounding box
-            (image_transformed, mask_transformed, crop_paras, bbox) = (
-                pad_and_resize_image(
-                    image,
-                    self.crop_longest,
-                    self.img_size,
-                    mask=mask,
-                    transform=self.transform,
-                )
+        # Transform the image and mask, and get crop parameters and bounding box
+        (image_transformed, mask_transformed, crop_paras, bbox) = (
+            pad_and_resize_image(
+                image,
+                self.crop_longest,
+                self.img_size,
+                mask=mask,
+                transform=self.transform,
             )
+        )
 
-            images_transformed.append(image_transformed)
-            if mask_transformed is not None:
-                masks_transformed.append(mask_transformed)
-            crop_parameters.append(crop_paras)
 
-            if self.load_gt:
-                bbox_xywh = torch.FloatTensor(bbox_xyxy_to_xywh(bbox)) # 转换为左上角xy坐标加上bbox的wh, 这里的bbox是没有recale过的
-                # print("ff2: ", anno["focal_length"])
-                # print("pp2: ", anno["principal_point"])
-                (focal_length_cropped, principal_point_cropped) = (
-                    adjust_camera_to_bbox_crop_(
-                        anno["focal_length"],
-                        anno["principal_point"],
-                        torch.FloatTensor(image.size),
-                        bbox_xywh,
-                    )
-                )
-                (new_focal_length, new_principal_point) = (
-                    adjust_camera_to_image_scale_(
-                        focal_length_cropped,
-                        principal_point_cropped,
-                        torch.FloatTensor(image.size),
-                        torch.FloatTensor([self.img_size, self.img_size]),
-                    )
-                )
-                new_fls.append(new_focal_length) # 因为照片被裁减了，所以焦距和pps要发生变化
-                new_pps.append(new_principal_point)
-                # NOTE: new_fls, new_pps 是NDC Space 中的坐标 [-1, 1]
-        images = torch.stack(images_transformed)
-        masks = torch.stack(masks_transformed) if self.have_mask else None
+        # images_transformed.append(image_transformed)
+        # if mask_transformed is not None:
+        #     masks_transformed.append(mask_transformed)
+        # crop_parameters.append(crop_paras)
 
         if self.load_gt:
-            batch.update(self._prepare_gt_camera_batch(annos, new_fls, new_pps))
-        if self.pose_estimation:
+            bbox_xywh = torch.FloatTensor(bbox_xyxy_to_xywh(bbox)) # 转换为左上角xy坐标加上bbox的wh, 这里的bbox是没有recale过的
+            # print("ff2: ", anno["focal_length"])
+            # print("pp2: ", anno["principal_point"])
+            (focal_length_cropped, principal_point_cropped) = (
+                adjust_camera_to_bbox_crop_(
+                    anno["focal_length"],
+                    anno["principal_point"],
+                    torch.FloatTensor(image.size),
+                    bbox_xywh,
+                )
+            )
+            (new_focal_length, new_principal_point) = (
+                adjust_camera_to_image_scale_(
+                    focal_length_cropped,
+                    principal_point_cropped,
+                    torch.FloatTensor(image.size),
+                    torch.FloatTensor([self.img_size, self.img_size]),
+                )
+            )
+            # new_fls.append(new_focal_length) # 因为照片被裁减了，所以焦距和pps要发生变化
+            # new_pps.append(new_principal_point)
+            # NOTE: new_fls, new_pps 是NDC Space 中的坐标 [-1, 1]
+
+        # images = torch.stack(images_transformed)
+        # masks = torch.stack(masks_transformed) if self.have_mask else None
+
+        # TODO: check this
+        if self.load_gt:
+            # batch.update(self._prepare_gt_camera_batch(anno, new_fl, new_pp))
+            pass
+        if self.pose_estimation and self.first_pose:
             # update target intrinsic matrix based on crop and resize.
-            s = crop_parameters[0][3]
-            bbx_top_left_afer_scale = crop_parameters[0][4:6]
+            # NOTE: only update self.trg_intrinsic once
+            s = crop_paras[3]
+            bbx_top_left_afer_scale = crop_paras[4:6]
             ff = self.trg_intrinsics[[0, 1], [0, 1]].clone()
             ppxy = self.trg_intrinsics[[0, 1], [2, 2]].clone()
             new_f = ff * s
             new_ppxy = s * ppxy - bbx_top_left_afer_scale
             self.trg_intrinsics[[0, 1], [0, 1]] = new_f
             self.trg_intrinsics[[0, 1], [2, 2]] = new_ppxy
-            # print("o3 intrinsics: ", self.trg_intrinsics)
-        batch.update(
-            {
-                "image": images.clamp(0, 1),
-                "crop_params": torch.stack(crop_parameters),
-                "scene_dir": os.path.dirname(os.path.dirname(image_paths[0])),
-                "masks": masks.clamp(0, 1) if self.have_mask else None,
-                "original_images": original_images,  # A dict with the image path as the key and the original np image as the value
-            }
-        )
+            print("o3 intrinsics: ", self.trg_intrinsics)
+            self.first_pose = False
+        # batch.update(
+        #     {
+        #         "image": images.clamp(0, 1),
+        #         "crop_params": torch.stack(crop_parameters),
+        #         "scene_dir": os.path.dirname(os.path.dirname(image_paths[0])),
+        #         "masks": masks.clamp(0, 1) if self.have_mask else None,
+        #         "original_images": original_images,  # A dict with the image path as the key and the original np image as the value
+        #     }
+        # )
 
-        print("image size: ", batch['image'].shape)
-        print("crop_params size: ", batch['crop_params'].shape)
-        return batch
+        # print("image size: ", batch['image'].shape)
+        # print("crop_params size: ", batch['crop_params'].shape)
+        image = image_transformed.clamp(0, 1)
+        mask = mask_transformed.clamp(0, 1) if self.have_mask else None
+        return image, mask, image_path, crop_paras, original_image
 
     def _prepare_gt_camera_batch(
-        self, annos: list, new_fls: list, new_pps: list
+        self, anno, new_fl, new_pp
     ) -> dict:
         """
 

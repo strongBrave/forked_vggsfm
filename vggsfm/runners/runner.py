@@ -81,7 +81,7 @@ class VGGSfMRunner:
 
         self.cfg = cfg
 
-        self.device = "cuda:1" if torch.cuda.is_available() else "cpu"
+        self.device = "cuda:2" if torch.cuda.is_available() else "cpu"
 
         self.build_vggsfm_model()
         self.camera_predictor = self.vggsfm_model.camera_predictor
