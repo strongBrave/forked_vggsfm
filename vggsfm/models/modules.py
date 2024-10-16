@@ -240,6 +240,10 @@ class CrossAttnBlock(nn.Module):
         )
 
     def forward(self, x, context, mask=None):
+        """
+        param x: query
+        param context: key, value
+        """
         # Normalize inputs
         x = self.norm1(x)
         context = self.norm_context(context)

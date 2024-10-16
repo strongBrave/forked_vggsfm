@@ -78,6 +78,7 @@ class DemoLoader(Dataset):
         intrinsics_path = os.path.join(SCENE_DIR, "intrinsics.npy")
         if os.path.exists(intrinsics_path):
             self.trg_intrinsics = torch.from_numpy(np.load(intrinsics_path)) # 需要后续根据crop和resize做变换
+        # print("o1 intrinscis: ", self.trg_intrinsics)
 
         img_filenames = glob.glob(os.path.join(SCENE_DIR, f"{self.prefix}/*"))
 
@@ -335,9 +336,9 @@ class DemoLoader(Dataset):
             ppxy = self.trg_intrinsics[[0, 1], [2, 2]].clone()
             new_f = ff * s
             new_ppxy = s * ppxy - bbx_top_left_afer_scale
-            self.trg_intrinsics[[0, 1], [1, 1]] = new_f
+            self.trg_intrinsics[[0, 1], [0, 1]] = new_f
             self.trg_intrinsics[[0, 1], [2, 2]] = new_ppxy
-
+            # print("o3 intrinsics: ", self.trg_intrinsics)
         batch.update(
             {
                 "image": images.clamp(0, 1),

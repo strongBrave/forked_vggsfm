@@ -68,6 +68,7 @@ class Triangulator(nn.Module):
         We use the pred_cameras from camera_predictor but it can be any init.
         Please note pred_tracks are defined in pixels.
         """
+
         # for safety
         torch.cuda.empty_cache()
 
@@ -112,7 +113,7 @@ class Triangulator(nn.Module):
             extra_params = None
             if camera_type == "SIMPLE_RADIAL":
                 extra_params = torch.zeros_like(extrinsics[:, 0, 0:1])
-            # print("7 intrinsics: ", intrinsics) # right
+
             tracks_normalized = cam_from_img(pred_tracks, intrinsics)
             # Visibility inlier
             inlier_vis = pred_vis > 0.05  # TODO: avoid hardcoded
@@ -162,7 +163,7 @@ class Triangulator(nn.Module):
                 pose_estimation=pose_estimation
             )
             print("Finished init BA")
-            print("6 intrinsics: ", intrinsics)
+
             # Given we have a well-conditioned point cloud,
             # we can optimize all the cameras by absolute pose refinement as in
             # https://github.com/colmap/colmap/blob/4ced4a5bc72fca93a2ffaea2c7e193bc62537416/src/colmap/estimators/pose.cc#L207
@@ -185,7 +186,7 @@ class Triangulator(nn.Module):
                 )
             )
             print("Finished init refine pose")  
-            print("5 intrinsics: ", intrinsics)
+
             (
                 points3D,
                 extrinsics,
@@ -205,9 +206,10 @@ class Triangulator(nn.Module):
                 max_reproj_error,
                 shared_camera=shared_camera,
                 camera_type=camera_type,
+                pose_estimation=pose_estimation,
             )
             print("Finished track triangulation and BA")
-            print("4 intrinsics: ", intrinsics)
+
 
             if robust_refine > 0:
                 for refine_idx in range(robust_refine):
@@ -229,9 +231,10 @@ class Triangulator(nn.Module):
                             force_estimate=force_estimate,
                             shared_camera=shared_camera,
                             camera_type=camera_type,
+                            pose_estimation=pose_estimation
                         )
                     )
-                    print("3 intrinsics: ", intrinsics)
+
                     (
                         points3D,
                         extrinsics,
@@ -254,7 +257,7 @@ class Triangulator(nn.Module):
                         pose_estimation=pose_estimation
                     )
                     print(f"Finished robust refine {refine_idx}")
-                    print("2 intrinsics: ", intrinsics)
+
             ba_options = pycolmap.BundleAdjustmentOptions()
             ba_options.print_summary = False
             if pose_estimation:
@@ -294,7 +297,7 @@ class Triangulator(nn.Module):
                     ba_options=ba_options,
                     camera_type=camera_type,
                 )
-                print("1 intrinsics: ", intrinsics)
+
                 print(f"Finished iterative BA {BA_iter}")
                 
                 max_reproj_error = max_reproj_error // 2
@@ -422,6 +425,7 @@ class Triangulator(nn.Module):
                 pose_estimation=pose_estimation,
             )
         )
+
 
         valid_poins3D_mask, _ = filter_all_points3D(
             points3D,

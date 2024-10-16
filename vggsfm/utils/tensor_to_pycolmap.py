@@ -47,6 +47,7 @@ def batch_matrix_to_pycolmap(
 
     extrinsics = extrinsics.cpu().numpy()
     intrinsics = intrinsics.cpu().numpy()
+    # print("in 6 intrinsics: ", intrinsics)
 
     if extra_params is not None:
         extra_params = extra_params.cpu().numpy()
@@ -95,6 +96,7 @@ def batch_matrix_to_pycolmap(
                         intrinsics[fidx][1, 2],
                     ]
                 )
+                # print("pycolmap_intri: ", pycolmap_intri)
             else:
                 raise ValueError(
                     f"Camera type {camera_type} is not supported yet"

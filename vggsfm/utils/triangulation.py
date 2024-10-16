@@ -272,6 +272,7 @@ def refine_pose(
     max_reproj_error=12,
     camera_type="SIMPLE_PINHOLE",
     force_estimate=False,
+    pose_estimation=False,
 ):
     # extrinsics: Sx3x4
     # intrinsics: Sx3x3
@@ -329,6 +330,9 @@ def refine_pose(
 
     refoptions = pycolmap.AbsolutePoseRefinementOptions()
     refoptions.refine_focal_length = True
+    if pose_estimation:
+        refoptions.refine_focal_length = False
+        estoptions.estimate_focal_length = False
     refoptions.refine_extra_params = True
     refoptions.print_summary = False
 
@@ -339,6 +343,8 @@ def refine_pose(
     scale = image_size.max()
 
     pycamera = None
+    print("3_11 intrinsics: ", intrinsics)
+    print("3_11 pose_esmation: ", pose_estimation)
 
     for ridx in range(S):
         if pycamera is None or (not shared_camera):
@@ -1032,7 +1038,8 @@ def global_BA(
     camera_type="SIMPLE_PINHOLE",
     pose_estimation=False,
 ):
-    ba_options = prepare_ba_options(pose_estimation)
+    print("pose estimation: ", pose_estimation)
+    ba_options = prepare_ba_options(pose_estimation)  
 
     # triangulated_points
     BA_points = triangulated_points[valid_tracks]
