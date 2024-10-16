@@ -13,7 +13,7 @@ import pycolmap
 import numpy as np
 
 
-from typing import Optional
+from typing import Optional, List
 
 from PIL import Image, ImageFile
 from torchvision import transforms
@@ -44,7 +44,8 @@ class DemoLoader(Dataset):
         sort_by_filename: bool = True,
         load_gt: bool = False,
         prefix: str = "images",
-        pose_estimation: bool=False
+        pose_estimation: bool=False,
+        cls: Optional[List] = None,
     ):
         """
         Initialize the DemoLoader dataset.
@@ -61,6 +62,7 @@ class DemoLoader(Dataset):
             load_gt (bool): Flag to indicate if ground truth data should be loaded.
                     If True, the gt is assumed to be in the sparse/0 directory, in a colmap format.
                     colmap format: cameras.bin, images.bin, and points3D.bin
+            cls (list): List containing the class name for the linemod dataset.
         """
         if not SCENE_DIR:
             raise ValueError("SCENE_DIR cannot be None")
@@ -86,6 +88,7 @@ class DemoLoader(Dataset):
             img_filenames = sorted(img_filenames) 
 
         self.sequences[bag_name] = self._load_images(img_filenames) # e.g. bag_name=kitchen 返回每个照片的内外参数以及每个图片的编号
+
         self.sequence_list = sorted(self.sequences.keys())
 
         self.transform = transform or transforms.Compose(
@@ -102,7 +105,7 @@ class DemoLoader(Dataset):
 
     def _load_images(self, img_filenames: list) -> list:
         """
-        Load images and optionally their annotations.
+        Load images (just image file name) and optionally their annotations.
 
         Args:
             img_filenames (list): List of image file paths.
@@ -117,7 +120,7 @@ class DemoLoader(Dataset):
             frame_dict = {"img_path": img_name}
             if self.load_gt:
                 anno_dict = calib_dict[os.path.basename(img_name)] # basename选取文件路径最后一个单词
-                frame_dict.update(anno_dict)
+                frame_dict.update(anno_dict) # 默认基本不做这个操作
             filtered_data.append(frame_dict)
         return filtered_data
 
@@ -349,6 +352,8 @@ class DemoLoader(Dataset):
             }
         )
 
+        print("image size: ", batch['image'].shape)
+        print("crop_params size: ", batch['crop_params'].shape)
         return batch
 
     def _prepare_gt_camera_batch(

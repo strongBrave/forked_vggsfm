@@ -23,7 +23,7 @@ def demo_fn(cfg: DictConfig):
     OmegaConf.set_struct(cfg, False)
 
     # Print configuration
-    print("Model Config:", OmegaConf.to_yaml(cfg))
+    # print("Model Config:", OmegaConf.to_yaml(cfg))
 
     # Configure CUDA settings
     torch.backends.cudnn.enabled = False
@@ -34,7 +34,7 @@ def demo_fn(cfg: DictConfig):
     seed_all_random_engines(cfg.seed)
 
     # Initialize VGGSfM Runner
-    vggsfm_runner = VGGSfMRunner(cfg)
+    # vggsfm_runner = VGGSfMRunner(cfg)
 
     # Load Data
     test_dataset = DemoLoader(
@@ -72,16 +72,16 @@ def demo_fn(cfg: DictConfig):
 
     # Run VGGSfM
     # Both visualization and output writing are performed inside VGGSfMRunner
-    predictions = vggsfm_runner.run(
-        images,
-        masks=masks,
-        original_images=original_images,
-        image_paths=image_paths,
-        crop_params=crop_params,
-        seq_name=seq_name,
-        output_dir=output_dir,
-        trg_intrinsics=trg_intrinsics
-    )
+    # predictions = vggsfm_runner.run(
+    #     images,
+    #     masks=masks,
+    #     original_images=original_images,
+    #     image_paths=image_paths,
+    #     crop_params=crop_params,
+    #     seq_name=seq_name,
+    #     output_dir=output_dir,
+    #     trg_intrinsics=trg_intrinsics
+    # )
 
     # print(torch.argwhere(masks[0, 0] == 0).shape)
     print("Demo Finished Successfully")
