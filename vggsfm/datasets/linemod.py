@@ -11,6 +11,7 @@ import torch
 import copy
 import pycolmap
 import numpy as np
+from loguru import logger
 
 
 from typing import Optional, List
@@ -46,6 +47,7 @@ class DemoLoader(Dataset):
         prefix: str = "images",
         pose_estimation: bool=False,
         cls: Optional[List] = None,
+        shuffle: bool=False,
     ):
         """
         Initialize the DemoLoader dataset.
@@ -98,7 +100,7 @@ class DemoLoader(Dataset):
 
         # img_filenames = glob.glob(os.path.join(SCENE_DIR, f"{self.prefix}/*"))
 
-        if self.sort_by_filename: # 对文件照片排序
+        if self.sort_by_filename and not shuffle: # 对文件照片排序
             # img_filenames = sorted(img_filenames)
             self.sequences = {class_name: self._load_images(sorted(glob.glob(os.path.join(root_dir, class_name, "images/*")))) for class_name in self.cls_dirs}
 
@@ -210,17 +212,40 @@ class DemoLoader(Dataset):
         
         image_path = anno["img_path"]
         image = Image.open(image_path).convert("RGB")
-
+        image_no = int(os.path.splitext(os.path.basename(image_path))[0])
+        pose_path = image_path.replace(f"/{self.prefix}", "/pose")
+        pose_path = pose_path.replace(os.path.basename(image_path), "pose" + str(image_no) + ".npy")
+        pose = np.load(pose_path)
 
         if self.have_mask:
             mask_path = image_path.replace(f"/{self.prefix}", "/masks")
-            image_path_copy = copy.copy(mask_path)
-            # print("image_path_copy: ", image_path_copy)
-            mask_path = image_path_copy.replace("jpg", "png") # NOTE: mask为png图片
+            mask_path = mask_path.replace("jpg", "png") # NOTE: mask为png图片
+            logger.debug(f"image path: {image_path} ------ mask path: {mask_path} ------ pose path: {pose_path}")
             # print("mask_path: ", mask_path)
             mask = Image.open(mask_path).convert("L") # 转换为灰度图，单通道
 
-        return image, mask, image_path
+        return image, mask, pose, image_path, mask_path, pose_path
+
+    def _load_path(self, image_path) -> dict:
+        """
+        Load a bunch of paths for a image, containg image_path, mask_path, npy_path
+        
+        Args:
+            image_path (str) : The path of a image
+        Returns
+            path (dict): A dict contains 'image_path', 'mask_path', 'pose_path'.
+        """
+        path = {}
+        p_dir = os.path.dirname(os.path.dirname(image_path))
+        image_base = os.path.basename(image_path)
+        mask_base = copy.copy(image_base).replace("jpg", "png")
+        image_no = int(os.path.splitext(image_base)[0]) # int去掉前置0
+        needed = ['images', 'masks', 'pose']
+        path['image_path'] = image_path
+        path['mask_path'] = os.path.join(p_dir, "masks", mask_base)
+        path['pose_path'] = os.path.join(p_dir, "pose", "pose" + str(image_no) + ".npy")
+        return path
+
 
     def get_data(
         self,
@@ -253,12 +278,23 @@ class DemoLoader(Dataset):
         # if self.sort_by_filename:
         #     annos = sorted(annos, key=lambda x: x["img_path"])
 
-        image, mask, image_path = self._load_image_and_mask(anno) # 返回是一个image, mask, image_path
+        image, mask, pose, image_path, mask_path, pose_path = self._load_image_and_mask(anno) # 返回是一个image, mask, image_path
+        # path = self._load_path(image_path) # 返回的是一个dict，"image_path", "mask_path", "pose_path"
         image, mask, image_path, crop_paras, original_image = self._prepare_batch(
             anno, image, mask, image_path
-        ) # 
+        ) #这里的image, pask是转换为tensor的
 
-        return image, mask, crop_paras, original_image, image_path
+        sample = {
+            'image': image, # 3 x H x W, tensor
+            "mask": mask,  # 1 x H x W, tensor
+            "pose": pose, # 3 x 3, numpy
+            "crop_params": crop_paras, # 1 x 8, tensor
+            "original_image": original_image, # , dict
+            "image_path": image_path, # string
+            "mask_path": mask_path, # string
+            "pose_path": pose_path, # string
+        }
+        return sample
 
 
     def _prepare_batch(
@@ -359,7 +395,7 @@ class DemoLoader(Dataset):
             new_ppxy = s * ppxy - bbx_top_left_afer_scale
             self.trg_intrinsics[[0, 1], [0, 1]] = new_f
             self.trg_intrinsics[[0, 1], [2, 2]] = new_ppxy
-            print("o3 intrinsics: ", self.trg_intrinsics)
+
             self.first_pose = False
         # batch.update(
         #     {
@@ -535,6 +571,9 @@ def pad_and_resize_image(
         mask = _crop_image(mask, bbox)
         mask_transformed = transform(mask).clamp(0.0, 1.0)
         mask_transformed = 1 - mask_transformed
+        mask_transformed[mask_transformed < 0.5] = 0 # 彻底变为0与1
+        mask_transformed[mask_transformed >= 0.5] = 1
+        assert torch.all((mask_transformed == 0) | (mask_transformed == 1)), "The tensor contains values other than 0 and 1"
     else:
         mask_transformed = None
 

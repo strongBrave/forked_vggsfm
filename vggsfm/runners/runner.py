@@ -208,6 +208,7 @@ class VGGSfMRunner:
         Returns:
             dict: A dictionary containing the predictions from the reconstruction process.
         """
+        self.start_image_no = str(int(os.path.splitext(os.path.basename(image_paths[0]))[0])) # 每个batch的第一张照片的编号, int操作为了去除前置0
         if output_dir is None:
             now = datetime.datetime.now()
             timestamp = now.strftime("%Y%m%d_%H%M")
@@ -241,7 +242,6 @@ class VGGSfMRunner:
                 trg_intrinsics=trg_intrinsics,
             )
 
-            print("ultimate-1 intrinsics: ", predictions["intrinsics_opencv"])
             # Save the sparse reconstruction results
             if self.cfg.save_to_disk:
                 self.save_sparse_reconstruction(
@@ -288,14 +288,29 @@ class VGGSfMRunner:
                     )
 
             # Visualize the 3D reconstruction if enabled
+            # When doing pose_estimation, visualization is cancelled
             if self.cfg.viz_visualize:
                 self.visualize_3D_in_visdom(predictions, seq_name, output_dir)
 
             if self.cfg.gr_visualize:
                 self.visualize_3D_in_gradio(predictions, seq_name, output_dir)
 
-            print("ultimate intrinsics: ", predictions["intrinsics_opencv"])
+            # print("extrinsics_opencv: ", predictions['extrinsics_opencv']) # tensor
+            # print("intrinsics_opencv: ", predictions['intrinsics_opencv'])
+            self.save_extrinsics_opencv(predictions, image_paths, output_dir)
             return predictions
+
+    def save_extrinsics_opencv(self, predictions, image_paths, output_dir): # LineMOD/cat
+        extrinsics_opencv = predictions["extrinsics_opencv"].to('cpu').numpy() # B, 3, 4
+        image_nos = [str(int(os.path.splitext(os.path.basename(image_path))[0])) for image_path in image_paths] # 每个照片编号
+        
+        save_dir = os.path.join(output_dir, "save_extrinsics_opencv")
+        if not os.path.exists(save_dir):
+            os.mkdir(save_dir)
+        
+        for idx, image_no in enumerate(image_nos):
+            np.save(os.path.join(save_dir, "extrinsics_opencv" + image_no + ".npy"), extrinsics_opencv[idx])
+
 
     def sparse_reconstruct(
         self,
@@ -618,7 +633,9 @@ class VGGSfMRunner:
             }
             intrinsics_original_res = []
             # We assume the returned extri and intri cooresponds to the order of sorted image_paths
+            # TODO: check this, 返回的内参和外参矩阵是按照片编号从小到大对应的
             for fname in sorted(image_paths):
+                print("fname: ", fname)
                 pyimg = reconstruction.images[fname_to_id[fname]]
                 pycam = reconstruction.cameras[pyimg.camera_id]
                 intrinsics_original_res.append(pycam.calibration_matrix())
@@ -642,7 +659,6 @@ class VGGSfMRunner:
         predictions["valid_tracks"] = valid_tracks
         
         predictions["additional_points_dict"] = additional_points_dict
-        print(predictions['extrinsics_opencv'].shape)
         return predictions
 
     def triangulate_extra_points(
@@ -892,7 +908,7 @@ class VGGSfMRunner:
         visual_dir = os.path.join(output_dir, "visuals")
         os.makedirs(visual_dir, exist_ok=True)
         save_video_with_reprojections(
-            os.path.join(visual_dir, "reproj.mp4"),
+            os.path.join(visual_dir, self.start_image_no + "_reproj.mp4"),
             img_with_circles_list,
             video_size,
         )
@@ -913,9 +929,9 @@ class VGGSfMRunner:
         # Export prediction as colmap format
         reconstruction_pycolmap = predictions["reconstruction"]
         if output_dir is None:
-            output_dir = os.path.join("output", seq_name)
+            output_dir = os.path.join("output", seq_name) # seq_name indicates class name
 
-        sfm_output_dir = os.path.join(output_dir, "sparse")
+        sfm_output_dir = os.path.join(output_dir, "sparse", self.start_image_no)
         print("-" * 50)
         print(
             f"The output has been saved in COLMAP style at: {sfm_output_dir} "
@@ -1047,13 +1063,11 @@ class VGGSfMRunner:
 
                 resize_ratio = real_image_size.max() / img_size # s的倒数 < 1
                 real_focal = resize_ratio * pred_params[0] # rescale焦距
-                print("bbx_top_left: ", bbx_top_left)
-                print("pred_params: ", original_pp)
+
                 real_pp = (original_pp + bbx_top_left.cpu().numpy()) * resize_ratio.cpu().numpy()
                 # real_pp = real_image_size.cpu().numpy() // 2
 
-                print("crop_params shape: ", crop_params.shape)
-                print(crop_params[0, 1, :])
+
 
                 pred_params[0] = real_focal
                 pred_params[1:3] = real_pp

@@ -343,8 +343,6 @@ def refine_pose(
     scale = image_size.max()
 
     pycamera = None
-    print("3_11 intrinsics: ", intrinsics)
-    print("3_11 pose_esmation: ", pose_estimation)
 
     for ridx in range(S):
         if pycamera is None or (not shared_camera):
@@ -511,7 +509,7 @@ def init_refine_pose(
     # points3D: P' x 3
     # tracks: SxPx2
     # valid_track_mask_init: P
-    print("before refine: ", intrinsics)
+
     S, _, _ = extrinsics.shape
     _, P, _ = tracks.shape
 
@@ -646,7 +644,7 @@ def init_refine_pose(
             refined_extra_params[~valid_frame_mask] = extra_params[
                 ~valid_frame_mask
             ].to(refined_extrinsics.dtype)
-    print("after refine: ", refined_intrinsics)
+
     return (
         refined_extrinsics,
         refined_intrinsics,

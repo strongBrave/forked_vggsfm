@@ -12,6 +12,7 @@ img_size: 1024
 debug: False
 
 pose_estimation: True # True代表BA不会优化内参参数
+shuffle: False # dataloader setting up
 
 
 center_order: False
@@ -20,9 +21,9 @@ extract_color: True
 filter_invalid_frame: True
 
 comple_nonvis: True
-query_frame_num: 2
+query_frame_num: 3
 robust_refine: 2
-BA_iters: 1
+BA_iters: 3
 
 fine_tracking: True
 
@@ -30,7 +31,7 @@ camera_type: "SIMPLE_PINHOLE"   # optional: ["SIMPLE_PINHOLE", "SIMPLE_RADIAL", 
 
 load_gt: False # load gt camera pose
 viz_visualize: False
-gr_visualize: True
+gr_visualize: False
 
 fmat_thres: 4.0
 max_reproj_error: 4.0
@@ -42,7 +43,7 @@ dense_depth: False
 avg_pose: True
 shared_camera: True
 
-save_to_disk: True
+save_to_disk: False
 SCENE_DIR: examples/kitchen
 
 resume_ckpt:  ckpt/vggsfm_v2_0_0.bin
@@ -54,7 +55,7 @@ use_poselib: True
 
 shift_point2d_to_original_res: False
 
-make_reproj_video: False
+make_reproj_video: True
 
 visual_tracks: False
 visual_query_points: False

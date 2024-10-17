@@ -14,6 +14,7 @@ from vggsfm.runners.runner import VGGSfMRunner
 from vggsfm.datasets.linemod import DemoLoader
 from vggsfm.utils.utils import seed_all_random_engines
 from loguru import logger
+import numpy as np
 
 cls = ['ape',  # 0
          'benchvise', # 1
@@ -32,22 +33,22 @@ cls = ['ape',  # 0
 
 # custome collate function
 def custom_collate_fn(batch):
-    images = torch.stack([item[0] for item in batch])  # 假设第一个元素是 image
-    masks = torch.stack([item[1] for item in batch])  # 假设第二个元素是 mask
-    crop_params = torch.stack([item[2] for item in batch])  # 假设第三个元素是 crop_params
-    
-    # 处理 original_image 是字典的情况
+    images = torch.stack([item['image'] for item in batch])
+    masks = torch.stack([item['mask'] for item in batch])
+    poses = np.stack([item['pose'] for item in batch])
+    crop_params = torch.stack([item['crop_params'] for item in batch])
+    image_paths = [item['image_path'] for item in batch]
+    mask_paths = [item['mask_path'] for item in batch]
+    pose_paths = [item['pose_path'] for item in batch]
+
+        # 处理 original_image 是字典的情况
     original_images = {}
     for item in batch:
-        for key, value in item[3].items():  # 动态遍历每个 original_image 中的键和值
+        for key, value in item['original_image'].items():  # 动态遍历每个 original_image 中的键和值
             if key not in original_images:
-                original_images[key] = []
-            original_images[key].append(value)
-    
-    image_paths = [item[4] for item in batch]  # 假设第五个是 image_path
+                original_images[key] = value
 
-    return (images, masks, crop_params, original_images, image_paths)
-
+    return (images, masks, poses, crop_params, original_images, image_paths, mask_paths, pose_paths)
 
 @hydra.main(config_path="cfgs/", config_name="demo")
 def demo_fn(cfg: DictConfig):
@@ -79,19 +80,23 @@ def demo_fn(cfg: DictConfig):
         load_gt=cfg.load_gt,
         pose_estimation=cfg.pose_estimation,
         cls=cls,
+        shuffle=cfg.shuffle,
     )
-    test_dataloader = DataLoader(test_dataset, batch_size=16, shuffle=True, drop_last=True, 
+    test_dataloader = DataLoader(test_dataset, batch_size=10, shuffle=cfg.shuffle, drop_last=True, 
                                  collate_fn=custom_collate_fn)
 
-    for i in range(4, 5):
+    for i in range(len(cls)):
         test_dataset.set_cls_idx(i)
         logger.info(f"Starting load {test_dataset.current_cls_name} data")
-        for (images, masks, crop_params, original_images, image_paths) in test_dataloader:
-            print("image shape: ", images.shape)
-            print("mask shape: ", masks.shape)
-            print("crop_params shape: ", crop_params.shape)
-            # print("original_image: ", original_image)
-            print("image path: ", image_paths)
+        for (images, masks, poses, crop_params, original_images, image_paths, _, _) in test_dataloader:
+            if cfg.shuffle:
+                image_paths = sorted(image_paths)
+            # print("image shape: ", images.shape)
+            # print("mask shape: ", masks.shape)
+            # print("crop_params shape: ", crop_params.shape)
+            # print("image path: ", image_paths)
+            logger.debug(f"image path: {image_paths}")
+            logger.success(f"Successfully load {test_dataset.current_cls_name} data")
             # Run VGGSfM
             # Both visualization and output writing are performed inside VGGSfMRunner
             logger.info(f"Starting vggsfm {test_dataset.current_cls_name}")
@@ -104,8 +109,7 @@ def demo_fn(cfg: DictConfig):
                 seq_name=test_dataset.current_cls_name,
                 output_dir=test_dataset.out_dir[test_dataset.current_cls_idx],
                 trg_intrinsics=test_dataset.trg_intrinsics
-    )
-        logger.success(f"Successfully load {test_dataset.current_cls_name} data")
+            )
             
 
     # sequence_list = test_dataset. # 有几种种类, e.g. [cat, mug, ...]
