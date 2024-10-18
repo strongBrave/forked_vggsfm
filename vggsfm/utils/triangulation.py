@@ -1157,6 +1157,7 @@ def iterative_global_BA(
         extra_params.clone() if extra_params is not None else None
     )  # Clone extra_params if not None
 
+    
     (points3D_opt, extrinsics, intrinsics, extra_params) = (
         pycolmap_to_batch_matrix(
             reconstruction, device=pred_tracks.device, camera_type=camera_type

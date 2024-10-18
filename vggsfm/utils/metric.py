@@ -7,6 +7,8 @@
 import random
 import numpy as np
 import torch
+import os 
+import json
 
 from minipytorch3d.rotation_conversions import (
     matrix_to_quaternion,
@@ -345,3 +347,169 @@ def compare_translation_by_angle(t_gt, t, eps=1e-15, default_err=1e6):
 
     err_t[torch.isnan(err_t) | torch.isinf(err_t)] = default_err
     return err_t
+
+from plyfile import PlyData
+
+def get_all_points_on_model(cad_model_path):
+    ply = PlyData.read(cad_model_path)
+    data = ply.elements[0].data
+    x = data['x']
+    y = data['y']
+    z = data['z']
+    model = np.stack([x, y, z], axis=-1) # n x 3
+    return model
+
+def translation_meters(tvec_gt, tvec_pred, batch_size=None, input_unit="m"):
+    # defult metric unit is cm.
+    tvec_diff = tvec_gt - tvec_pred
+    if input_unit == "mm":
+        tvec_diff = tvec_diff * 1e-1
+    elif input_unit == "cm":
+        pass
+    elif input_unit == "dm":
+        tvec_diff = tvec_diff * 1e1
+    elif input_unit == "m":
+        tvec_diff = tvec_diff * 1e2
+    else:
+        raise ValueError(f"Invalid input unit {input_unit}")
+    
+    tvec_diff_norm = torch.norm(tvec_diff)
+    return tvec_diff_norm
+
+def projection_2d_error(model_3d_pts, pred_pose, gt_pose, t_scale='m'):
+    def project(xyz, K, RT):
+        """
+        NOTE: need to use original K
+        xyz: [N, 3]
+        K: [3, 3]
+        RT: [3, 4]
+        """
+        xyz = np.dot(xyz, RT[:, :3].T) + RT[:, 3:].T
+        xyz = np.dot(xyz, K.T)
+        xy = xyz[:, :2] / xyz[:, 2:]
+        return xy
+    
+    K = np.array([[572.4114, 0, 325.2611], [0, 573.57043, 242.04899], [0, 0, 1]]) # only for linemod debug test
+
+    if t_scale == 'mm':
+        model_3d_pts /= 10
+        pred_pose[:,3] /= 10
+        gt_pose[:,3] /= 10
+    elif t_scale == 'cm':
+        pass
+    elif t_scale == 'm':
+        model_3d_pts *= 100
+        pred_pose[:,3] *= 100
+        gt_pose[:,3] *= 100
+        
+    pred_pose = pred_pose.to('cpu').numpy()
+    gt_pose = gt_pose.to('cpu').numpy()
+
+    model_2d_pred = project(model_3d_pts, K, pred_pose) # pose_pred: 3*4
+    model_2d_targets = project(model_3d_pts, K, gt_pose)
+    proj_mean_diff = np.mean(np.linalg.norm(model_2d_pred - model_2d_targets, axis=-1))
+    out = proj_mean_diff
+        
+    return out
+
+
+def add_metric(model_3d_pts, pred_pose, gt_pose, diameter=None, t_scale='m', percentage=0.1, syn=False):
+    """
+    compuete ADD metric
+    Params:
+        model_path (str): the path to load ply file of model.
+        pred_pose (numpy): the predicted pose. 3 x 4
+        gt_pose (numpy): the grouded_truth pose. 3 x 4
+    Returns:
+
+    """
+    model_unit = t_scale
+
+    ret = []
+    
+    # model_3d_pts = get_all_points_on_model(model_path)
+    max_model_coord = np.max(model_3d_pts, axis=0)
+    min_model_coord = np.min(model_3d_pts, axis=0)
+
+    diameter_from_model = np.linalg.norm(max_model_coord - min_model_coord)
+    if diameter is None:
+        diameter = diameter_from_model
+
+    if model_unit == 'mm':
+        model_3d_pts /= 10
+        diameter /= 10
+        pred_pose[:,3] /= 10 # rescale translation vector
+        gt_pose[:,3] /= 10
+        max_model_coord = np.max(model_3d_pts, axis=0)
+        min_model_coord = np.min(model_3d_pts, axis=0)
+        diameter_from_model = np.linalg.norm(max_model_coord - min_model_coord)
+    
+    elif model_unit == 'cm':
+        pass
+    elif model_unit == 'm':
+        model_3d_pts *= 100
+        diameter *= 100
+        pred_pose[:,3] *= 100 
+        gt_pose[:,3] *= 100
+
+        max_model_coord = np.max(model_3d_pts, axis=0)
+        min_model_coord = np.min(model_3d_pts, axis=0)
+        diameter_from_model = np.linalg.norm(max_model_coord - min_model_coord)
+
+    pred_pose = pred_pose.to("cpu").numpy()
+    gt_pose = gt_pose.to("cpu").numpy()
+
+    diameter_thres = diameter * percentage
+    pred_pts = np.dot(model_3d_pts, pred_pose[:, :3].T) + pred_pose[:, 3]
+    gt_pts = np.dot(model_3d_pts, gt_pose[:, :3].T) + gt_pose[:, 3]
+
+    if syn:
+        from scipy import spatial
+        mean_dist_index = spatial.cKDTree(pred_pts)
+        mean_dist, _ = mean_dist_index.query(gt_pts, k=1)
+        mean_dist = np.mean(mean_dist)
+    else:
+        mean_dist = np.mean(np.linalg.norm(pred_pts - gt_pts, axis=-1))
+
+    if mean_dist < diameter_thres:
+        ret.append(1.0)
+    else:
+        ret.append(0.0)
+    
+    return np.array(ret) if len(ret) > 1 else ret[0]
+    
+
+def compoute_metric(model_path,
+                    pred_pose,
+                    gt_pose,
+                    diameter=None,
+                    percentage=0.1,
+                    t_scale='m'):
+    model_3d_pts = get_all_points_on_model(model_path)
+    trans_diff = translation_meters(gt_pose[:, 3], pred_pose[:, 3], input_unit=t_scale) # tensor
+    rota_diff = rotation_angle( # tensor
+        pred_pose[:3, :3].unsqueeze(0),
+        gt_pose[:3, :3].unsqueeze(0),
+    ) 
+    trans_diff_degree = translation_angle( # tensor
+        pred_pose[:3, 3].unsqueeze(0),
+        gt_pose[:3, 3].unsqueeze(0),
+    )
+    proj_2d_err = projection_2d_error(model_3d_pts, pred_pose, gt_pose, t_scale=t_scale)
+    ADD = add_metric(model_3d_pts, pred_pose, gt_pose, diameter=None)
+
+    metrics = {
+    "rotation_error": rota_diff.item(),
+    "translation_error_degree": trans_diff_degree.item(),
+    "translation_error_cm": trans_diff.item(),
+    "add": ADD,
+    "proj2d": proj_2d_err,
+    }       
+    
+    return metrics
+
+
+def write_metrics(output_dir, metrics):
+    json_path = os.path.join(output_dir, "metrics.json")
+    with open(json_path, 'w') as f:
+        json.dump(metrics, f)

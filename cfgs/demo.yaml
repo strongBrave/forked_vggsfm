@@ -13,6 +13,7 @@ debug: False
 
 pose_estimation: True # True代表BA不会优化内参参数
 shuffle: False # dataloader setting up
+batch_size: 10
 
 
 center_order: False
@@ -43,7 +44,7 @@ dense_depth: False
 avg_pose: True
 shared_camera: True
 
-save_to_disk: False
+save_to_disk: True
 SCENE_DIR: examples/kitchen
 
 resume_ckpt:  ckpt/vggsfm_v2_0_0.bin

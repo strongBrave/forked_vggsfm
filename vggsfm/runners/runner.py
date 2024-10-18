@@ -11,6 +11,8 @@ import copy
 import torch
 import pycolmap
 import datetime
+from loguru import logger
+logger.add("./test_demo_load.log", level="INFO")
 
 import time
 import numpy as np
@@ -231,16 +233,26 @@ class VGGSfMRunner:
                 query_frame_num = self.cfg.query_frame_num
 
             # Perform sparse reconstruction
-            predictions = self.sparse_reconstruct(
-                images,
-                masks=masks,
-                crop_params=crop_params,
-                image_paths=image_paths,
-                query_frame_num=query_frame_num,
-                seq_name=seq_name,
-                output_dir=output_dir,
-                trg_intrinsics=trg_intrinsics,
-            )
+            # Catch error
+            try:
+                predictions = self.sparse_reconstruct(
+                    images,
+                    masks=masks,
+                    crop_params=crop_params,
+                    image_paths=image_paths,
+                    query_frame_num=query_frame_num,
+                    seq_name=seq_name,
+                    output_dir=output_dir,
+                    trg_intrinsics=trg_intrinsics,
+                )
+            except ValueError as e:
+                logger.error(f"value error in sparse_reconstruct: {e}")
+                logger.info(f"invalid data with start image no: {self.start_image_no}")
+                return None
+            except Exception as e:
+                logger.error(f"other error in sparse reconstruct: {e}")
+                logger.info(f"invalid data with start image no: {self.start_image_no}")
+                return None
 
             # Save the sparse reconstruction results
             if self.cfg.save_to_disk:

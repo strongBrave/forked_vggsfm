@@ -7,13 +7,20 @@
 
 import torch
 import hydra
+import json
 from omegaconf import DictConfig, OmegaConf
 
 from torch.utils.data import DataLoader
 from vggsfm.runners.runner import VGGSfMRunner
 from vggsfm.datasets.linemod import DemoLoader
+from vggsfm.utils.metric import (
+    compoute_metric,
+    write_metrics,
+)
+from vggsfm.utils.align import align_gt
 from vggsfm.utils.utils import seed_all_random_engines
 from loguru import logger
+import os
 import numpy as np
 
 cls = ['ape',  # 0
@@ -59,7 +66,7 @@ def demo_fn(cfg: DictConfig):
     OmegaConf.set_struct(cfg, False)
 
     # Print configuration
-    print("Model Config:", OmegaConf.to_yaml(cfg))
+    # print("Model Config:", OmegaConf.to_yaml(cfg))
 
     # Configure CUDA settings
     torch.backends.cudnn.enabled = False
@@ -69,8 +76,7 @@ def demo_fn(cfg: DictConfig):
     # Set seed for reproducibility
     seed_all_random_engines(cfg.seed)
 
-    # Initialize VGGSfM Runner
-    vggsfm_runner = VGGSfMRunner(cfg)
+
 
     # Load Data
     test_dataset = DemoLoader(
@@ -82,63 +88,58 @@ def demo_fn(cfg: DictConfig):
         cls=cls,
         shuffle=cfg.shuffle,
     )
-    test_dataloader = DataLoader(test_dataset, batch_size=10, shuffle=cfg.shuffle, drop_last=True, 
+    test_dataloader = DataLoader(test_dataset, batch_size=cfg.batch_size, shuffle=cfg.shuffle, drop_last=True, 
                                  collate_fn=custom_collate_fn)
 
-    for i in range(10, len(cls)):
+    mean_metrics = {} # 存储所有了类的mean_metric
+    for i in range(len(cls)):
         test_dataset.set_cls_idx(i)
+        cls_dir = test_dataset.out_dir[test_dataset.current_cls_idx]
+        metrics = {} # 存储每个类的每个batch的metric
+        mean_metric = {} # 存储每个类的每个metric的平均值
+        batch_count = 0 # 对于最后做平均操作
         logger.info(f"Starting load {test_dataset.current_cls_name} data")
-        for idx, (images, masks, poses, crop_params, original_images, image_paths, _, _) in enumerate(test_dataloader):
+
+        for (images, masks, poses, crop_params, original_images, image_paths, _, _) in test_dataloader:
+            batch_count += 1
             if cfg.shuffle:
                 image_paths = sorted(image_paths)
-            # print("image shape: ", images.shape)
-            # print("mask shape: ", masks.shape)
-            # print("crop_params shape: ", crop_params.shape)
-            # print("image path: ", image_paths)
+            start_image_no = str(int(os.path.splitext(os.path.basename(image_paths[0]))[0]))
             logger.debug(f"image path: {image_paths}")
-            logger.success(f"Successfully load {test_dataset.current_cls_name} data")
+            logger.success(f"Successfully load {test_dataset.current_cls_name} data from {start_image_no} to {str(int(start_image_no) + 10)}")
             # Run VGGSfM
             # Both visualization and output writing are performed inside VGGSfMRunner
             logger.info(f"Starting vggsfm {test_dataset.current_cls_name}")
-            predictions = vggsfm_runner.run(
-                images, # [B, 3, H, W]
-                masks=masks, # [B, 1, H, W]
-                original_images=original_images,
-                image_paths=image_paths,
-                crop_params=crop_params,
-                seq_name=test_dataset.current_cls_name,
-                output_dir=test_dataset.out_dir[test_dataset.current_cls_idx],
-                trg_intrinsics=test_dataset.trg_intrinsics
-            )
             
+            test_pred_pose, test_gt_pose = align_gt(output_dir=cls_dir,
+                     gt_poses=poses,
+                     batch_size=cfg.batch_size,
+                     start_image_no=start_image_no)
+            
+            metric = compoute_metric(model_path=os.path.join(cls_dir, cls[i] + ".ply"),
+                                      pred_pose=test_pred_pose,
+                                      gt_pose=test_gt_pose,
+                                      )
 
-    # sequence_list = test_dataset. # 有几种种类, e.g. [cat, mug, ...]
+            for key, value in metric.items():
+                mean_metric[key] = mean_metric.get(key, 0) + value
 
-    # seq_name = sequence_list[0]  # Run on one Scene, e.g. kitchen
+            metrics[start_image_no] = metric
+            logger.info(f"{start_image_no} metric: {metric}")
 
-    # Load the data for the selected sequence
-    # todo: watch
-    # batch, image_paths, trg_intrinsics = test_dataset.get_data(
-    #     sequence_name=seq_name, return_path=True
-    # )
-
-    # output_dir = batch[
-    #     "scene_dir"
-    # ]  # which is also cfg.SCENE_DIR for DemoLoader
-
-    # images = batch["image"]
-    # # IMPORTANT: MASK
-    # masks = batch["masks"] if batch["masks"] is not None else None # 1 filter out
-    # crop_params = (
-    #     batch["crop_params"] if batch["crop_params"] is not None else None
-    # )
-
-    # # Cache the original images for visualization, so that we don't need to re-load many times
-    # original_images = batch["original_images"]
-    # trg_intrinsics=None
+        mean_metric["batch_count"] = batch_count
+        mean_metric = {key: value / mean_metric['batch_count'] for key, value in mean_metric.items()}
+        mean_metric["batch_count"] = batch_count     
+        mean_metrics[cls[i]] = mean_metric   
 
 
-    # print(torch.argwhere(masks[0, 0] == 0).shape)
+        logger.info(f"{cls[i]} mean metric: {mean_metric}")
+        write_metrics(output_dir=cls_dir, metrics=metrics)
+
+    with open("mean_metric_per_class.json", "w") as f1:
+        json.dump(mean_metrics, f1)
+
+
     print("Demo Finished Successfully")
 
     return True
