@@ -34,7 +34,7 @@ Image.MAX_IMAGE_PIXELS = None
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
-class DemoLoader(Dataset):
+class LineMod(Dataset):
     def __init__(
         self,
         root_dir: str,
@@ -46,7 +46,6 @@ class DemoLoader(Dataset):
         load_gt: bool = False,
         prefix: str = "images",
         pose_estimation: bool=False,
-        cls: Optional[List] = None,
         shuffle: bool=False,
     ):
         """
@@ -70,6 +69,7 @@ class DemoLoader(Dataset):
         if not root_dir:
             raise ValueError("SCENE_DIR cannot be None")
 
+        self._init_cls() # initialize cls array
         self.root_dir = root_dir
         self.cls_dirs = sorted(os.listdir(root_dir))
         self.cls_dirs.remove(".DS_Store")
@@ -98,15 +98,10 @@ class DemoLoader(Dataset):
         if os.path.exists(intrinsics_path):
             self.trg_intrinsics = torch.from_numpy(np.load(intrinsics_path)) # 需要后续根据crop和resize做变换
 
-        # img_filenames = glob.glob(os.path.join(SCENE_DIR, f"{self.prefix}/*"))
+
 
         if self.sort_by_filename and not shuffle: # 对文件照片排序
-            # img_filenames = sorted(img_filenames)
             self.sequences = {class_name: self._load_images(sorted(glob.glob(os.path.join(root_dir, class_name, "images/*")))) for class_name in self.cls_dirs}
-
-        # self.sequences[bag_name] = self._load_images(img_filenames) # e.g. bag_name=kitchen 返回每个照片的内外参数以及每个图片的编号
-
-        # self.sequence_list = sorted(self.sequences.keys()) # sequence_list = class_dirs
 
         self.transform = transform or transforms.Compose(
             [transforms.ToTensor(), transforms.Resize(img_size, antialias=True)]
@@ -119,6 +114,41 @@ class DemoLoader(Dataset):
         self.normalize_cameras = normalize_cameras
 
         print(f"Data size of Sequence: {len(self)}")
+
+    def _init_cls(self, ):
+        # hard-coded
+        self.cls = ['ape',  # 0
+         'benchvise', # 1
+         'cam', # 2
+         'can', # 3
+         'cat', # 4
+         'driller', # 5
+         'duck', # 6
+         'eggbox', # 7
+         'glue', # 8
+         'holepuncher', # 9
+         'iron', # 10
+         'lamp', # 11
+         'phone'] # 12
+    
+    # custome collate function
+    def custom_collate_fn(self, batch):
+        images = torch.stack([item['image'] for item in batch])
+        masks = torch.stack([item['mask'] for item in batch])
+        poses = np.stack([item['pose'] for item in batch])
+        crop_params = torch.stack([item['crop_params'] for item in batch])
+        image_paths = [item['image_path'] for item in batch]
+        mask_paths = [item['mask_path'] for item in batch]
+        pose_paths = [item['pose_path'] for item in batch]
+
+            # 处理 original_image 是字典的情况
+        original_images = {}
+        for item in batch:
+            for key, value in item['original_image'].items():  # 动态遍历每个 original_image 中的键和值
+                if key not in original_images:
+                    original_images[key] = value
+
+        return (images, masks, poses, crop_params, original_images, image_paths, mask_paths, pose_paths)
 
     def set_cls_idx(self, cls_idx):
         self.current_cls_idx = cls_idx
@@ -169,8 +199,6 @@ class DemoLoader(Dataset):
             T = torch.from_numpy(extrinsic[:, 3])
             fl = torch.from_numpy(intrinsic[[0, 1], [0, 1]])
             pp = torch.from_numpy(intrinsic[[0, 1], [2, 2]])
-            # print("fl1: ", fl)
-            # print("pp1: ", pp)
 
             calib_dict[image.name] = {
                 "R": R,
@@ -220,8 +248,6 @@ class DemoLoader(Dataset):
         if self.have_mask:
             mask_path = image_path.replace(f"/{self.prefix}", "/masks")
             mask_path = mask_path.replace("jpg", "png") # NOTE: mask为png图片
-            logger.debug(f"image path: {image_path} ------ mask path: {mask_path} ------ pose path: {pose_path}")
-            # print("mask_path: ", mask_path)
             mask = Image.open(mask_path).convert("L") # 转换为灰度图，单通道
 
         return image, mask, pose, image_path, mask_path, pose_path
@@ -265,21 +291,16 @@ class DemoLoader(Dataset):
         Returns:
             dict: Batch of data.
         """
-        # if sequence_name is None:
-        #     sequence_name = self.sequence_list[index] # e.g. cat
+
 
         metadata = self.sequences[self.current_cls_name] # 包含很多字典的list, {'img_path', 'R', 'R', 'ff', 'ppxy'}
         if ids is None:
             ids = np.arange(len(metadata)) # frame的数量
 
-        # annos = [metadata[i] for i in ids] # annos是包含很多字典的list
+
         anno = metadata[index] # a dict containing {'img_path', 'R', 'R', 'ff', 'ppxy'}
 
-        # if self.sort_by_filename:
-        #     annos = sorted(annos, key=lambda x: x["img_path"])
-
         image, mask, pose, image_path, mask_path, pose_path = self._load_image_and_mask(anno) # 返回是一个image, mask, image_path
-        # path = self._load_path(image_path) # 返回的是一个dict，"image_path", "mask_path", "pose_path"
         image, mask, image_path, crop_paras, original_image = self._prepare_batch(
             anno, image, mask, image_path
         ) #这里的image, pask是转换为tensor的
@@ -348,15 +369,8 @@ class DemoLoader(Dataset):
         )
 
 
-        # images_transformed.append(image_transformed)
-        # if mask_transformed is not None:
-        #     masks_transformed.append(mask_transformed)
-        # crop_parameters.append(crop_paras)
-
         if self.load_gt:
             bbox_xywh = torch.FloatTensor(bbox_xyxy_to_xywh(bbox)) # 转换为左上角xy坐标加上bbox的wh, 这里的bbox是没有recale过的
-            # print("ff2: ", anno["focal_length"])
-            # print("pp2: ", anno["principal_point"])
             (focal_length_cropped, principal_point_cropped) = (
                 adjust_camera_to_bbox_crop_(
                     anno["focal_length"],
@@ -397,18 +411,7 @@ class DemoLoader(Dataset):
             self.trg_intrinsics[[0, 1], [2, 2]] = new_ppxy
 
             self.first_pose = False
-        # batch.update(
-        #     {
-        #         "image": images.clamp(0, 1),
-        #         "crop_params": torch.stack(crop_parameters),
-        #         "scene_dir": os.path.dirname(os.path.dirname(image_paths[0])),
-        #         "masks": masks.clamp(0, 1) if self.have_mask else None,
-        #         "original_images": original_images,  # A dict with the image path as the key and the original np image as the value
-        #     }
-        # )
 
-        # print("image size: ", batch['image'].shape)
-        # print("crop_params size: ", batch['crop_params'].shape)
         image = image_transformed.clamp(0, 1)
         mask = mask_transformed.clamp(0, 1) if self.have_mask else None
         return image, mask, image_path, crop_paras, original_image
