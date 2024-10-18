@@ -11,7 +11,6 @@ import torch
 import copy
 import pycolmap
 import numpy as np
-from loguru import logger
 
 
 from typing import Optional, List
@@ -69,9 +68,10 @@ class LineMod(Dataset):
         if not root_dir:
             raise ValueError("SCENE_DIR cannot be None")
 
-        self._init_cls() # initialize cls array
         self.root_dir = root_dir
         self.cls_dirs = sorted(os.listdir(root_dir))
+
+        # NOTE: This remove operation is optional, which depends on your file structure.
         self.cls_dirs.remove(".DS_Store")
         self.cls_dirs.remove("intrinsics.npy")
 
@@ -114,22 +114,6 @@ class LineMod(Dataset):
         self.normalize_cameras = normalize_cameras
 
         print(f"Data size of Sequence: {len(self)}")
-
-    def _init_cls(self, ):
-        # hard-coded
-        self.cls = ['ape',  # 0
-         'benchvise', # 1
-         'cam', # 2
-         'can', # 3
-         'cat', # 4
-         'driller', # 5
-         'duck', # 6
-         'eggbox', # 7
-         'glue', # 8
-         'holepuncher', # 9
-         'iron', # 10
-         'lamp', # 11
-         'phone'] # 12
     
     # custome collate function
     def custom_collate_fn(self, batch):

@@ -298,26 +298,23 @@ def test_align_camera_extrinsics(num_tests=10000):
 
             pdb.set_trace()
 
-def align_gt(output_dir, gt_poses, batch_size, start_image_no):
+def align_gt(pred_poses, gt_poses, batch_size, start_image_no):
     """
     Align pred pose with target pose. use the front B - 1 pred_pose to extimate align roation, 
     translation and scale factor. Return the last aligned pose.
     Params:
-        output_dir (str): directory path to load pred_pose npy file
-        gt_poses (tensor): ground_truth poses. B x 3 x 4
+        pred_poses (tensor): predicted poses. B x 3 x 4
+        gt_poses (numpy): ground_truth poses. B x 3 x 4
         start_image_no (str): the start image no for this batch
     Returns:
         test_pred_pose (tensor): the alighed pose to be used for computing metric. 3 x 4
         test_gt_pose (tensor): the corresponding gt poses.  3 x 4
     """
-    calculate_metric_device = "cuda:2" if torch.cuda.is_available() else "cpu"
-    prefix = "extrinsics_opencv"
+ 
     start_image_no = int(start_image_no)
     end_image_no = start_image_no + batch_size
-    pred_pose_paths = [os.path.join(output_dir, "save_extrinsics_opencv", "extrinsics_opencv" + str(image_no) + ".npy") for image_no in range(start_image_no, end_image_no)]
-    pred_poses = np.stack([np.load(pred_pose_path) for pred_pose_path in pred_pose_paths])
-    pred_poses = torch.tensor(pred_poses, device=calculate_metric_device).float() # convert to tensor for subsequent bmm api.
-    gt_poses = torch.tensor(gt_poses, device=calculate_metric_device).float()
+    pred_poses = pred_poses.float()
+    gt_poses = torch.tensor(gt_poses, device=pred_poses.device).float()
 
     assert pred_poses.shape[0] == batch_size
 
@@ -329,17 +326,7 @@ def align_gt(output_dir, gt_poses, batch_size, start_image_no):
     # Returns: [B, 3, 4]
     test_pred_pose = aligned_pred_poses[-1, :, :] #[3, 4]
     test_gt_pose = gt_poses[-1, :, :]
-
-    # err_R = rotation_angle(
-    #     test_pred_pose[:3, :3].unsqueeze(0),
-    #     test_gt_pose[:3, :3].unsqueeze(0),
-        
-    # )
-    # err_t_degree = translation_angle(
-    #     test_pred_pose[:3, 3].unsqueeze(0),
-    #     test_gt_pose[:3, 3].unsqueeze(0),
-    # )
-
+    
     return test_pred_pose, test_gt_pose
 
 

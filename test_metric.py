@@ -91,7 +91,7 @@ def demo_fn(cfg: DictConfig):
     test_dataloader = DataLoader(test_dataset, batch_size=cfg.batch_size, shuffle=cfg.shuffle, drop_last=True, 
                                  collate_fn=custom_collate_fn)
 
-    mean_metrics = {} # 存储所有了类的mean_metric
+    mean_metrics = {} # 存储所有了类的mean_metricz
     for i in range(len(cls)):
         test_dataset.set_cls_idx(i)
         cls_dir = test_dataset.out_dir[test_dataset.current_cls_idx]

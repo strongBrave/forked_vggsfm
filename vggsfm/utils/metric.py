@@ -496,7 +496,7 @@ def compoute_metric(model_path,
         gt_pose[:3, 3].unsqueeze(0),
     )
     proj_2d_err = projection_2d_error(model_3d_pts, pred_pose, gt_pose, t_scale=t_scale)
-    ADD = add_metric(model_3d_pts, pred_pose, gt_pose, diameter=None)
+    ADD = add_metric(model_3d_pts, pred_pose, gt_pose, diameter=diameter, percentage=percentage)
 
     metrics = {
     "rotation_error": rota_diff.item(),
@@ -509,7 +509,7 @@ def compoute_metric(model_path,
     return metrics
 
 
-def write_metrics(output_dir, metrics):
-    json_path = os.path.join(output_dir, "metrics.json")
-    with open(json_path, 'w') as f:
+def save_metrics_to_json(save_path, metrics):
+    with open(save_path, 'w') as f:
         json.dump(metrics, f)
+    

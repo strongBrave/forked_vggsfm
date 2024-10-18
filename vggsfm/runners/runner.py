@@ -12,7 +12,7 @@ import torch
 import pycolmap
 import datetime
 from loguru import logger
-logger.add("./test_demo_load.log", level="INFO")
+
 
 import time
 import numpy as np
@@ -20,12 +20,15 @@ from visdom import Visdom
 from torch.cuda.amp import autocast
 from hydra.utils import instantiate
 from lightglue import SuperPoint, SIFT, ALIKED
-
 from collections import defaultdict
+
+from vggsfm.utils.align import align_gt
 from vggsfm.utils.visualizer import Visualizer
 from vggsfm.two_view_geo.estimate_preliminary import (
     estimate_preliminary_cameras,
 )
+
+from vggsfm.utils.metric import compoute_metric
 
 from vggsfm.utils.utils import (
     write_array,
@@ -172,6 +175,8 @@ class VGGSfMRunner:
     def run(
         self,
         images,
+        gt_poses=None,
+        model_path=None,
         masks=None,
         original_images=None,
         image_paths=None,
@@ -191,6 +196,8 @@ class VGGSfMRunner:
             images (torch.Tensor): Input images with shape Tx3xHxW or BxTx3xHxW, where T is
                 the number of frames, B is the batch size, H is the height, and W is the
                 width. The values should be in the range (0,1).
+            gt_poses (numpy): Groud-truth poses of each batch of image. B x 3 x 4
+            model_path (str): Paths for loading the ply file of the model.
             masks (torch.Tensor, optional): Input masks with shape Tx1xHxW or BxTx1xHxW.
                 Binary masks where 1 indicates the pixel is filtered out.
             original_images (dict, optional): Dictionary with image basename as keys and original
@@ -307,11 +314,33 @@ class VGGSfMRunner:
             if self.cfg.gr_visualize:
                 self.visualize_3D_in_gradio(predictions, seq_name, output_dir)
 
-            # print("extrinsics_opencv: ", predictions['extrinsics_opencv']) # tensor
-            # print("intrinsics_opencv: ", predictions['intrinsics_opencv'])
-            self.save_extrinsics_opencv(predictions, image_paths, output_dir)
-            return predictions
+            # self.save_extrinsics_opencv(predictions, image_paths, output_dir)
 
+            metric = self.calculate_metric(pred_poses=predictions["extrinsics_opencv"],
+                                           gt_poses=gt_poses,
+                                           batch_size=self.cfg.batch_size,
+                                           start_imge_no=self.start_image_no,
+                                           model_path=model_path)
+            
+            predictions["metric"] = metric
+
+            return predictions
+        
+    def calculate_metric(self, pred_poses, gt_poses, batch_size, start_imge_no, model_path):
+        # calculate metric
+        test_pred_pose, test_gt_pose = align_gt(pred_poses=pred_poses,
+                                                gt_poses=gt_poses,
+                                                batch_size=self.cfg.batch_size,
+                                                start_image_no=self.start_image_no)
+        
+        metric = compoute_metric(model_path=model_path,
+                        pred_pose=test_pred_pose,
+                        gt_pose=test_gt_pose,
+                        )       
+        return metric
+
+
+    # save predictions["extrinsics_opencv"] to directory of each class of linemod dataset.
     def save_extrinsics_opencv(self, predictions, image_paths, output_dir): # LineMOD/cat
         extrinsics_opencv = predictions["extrinsics_opencv"].to('cpu').numpy() # B, 3, 4
         image_nos = [str(int(os.path.splitext(os.path.basename(image_path))[0])) for image_path in image_paths] # 每个照片编号
