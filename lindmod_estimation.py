@@ -109,10 +109,10 @@ def demo_fn(cfg: DictConfig):
         logger.success(f"Successfully save {test_dataset.current_cls_name} metrics json to {os.path.join(cls_dir, 'metrics.json')}.")
 
     logger.info(f"avg_cls_metrics information after {i + 1} update: {avg_cls_metrics}")
-    save_metrics_to_json(save_path="avg_cls_metrics.json", metrics=avg_cls_metrics) # save mean metrics
+    save_metrics_to_json(save_path=cfg.SAVE_JSON_DIR+"avg_cls_metrics.json", metrics=avg_cls_metrics) # save mean metrics
     logger.success(f"Successfully save avg_cls_metrics.json")
     logger.info("Demo Finished Successfully")
-    
+
     return True
 
 

@@ -15,6 +15,7 @@ pose_estimation: True # True代表BA不会优化内参参数
 shuffle: False # dataloader setting up
 batch_size: 10
 
+SAVE_JSON_DIR: "json/"
 
 center_order: False
 mixed_precision: fp16
