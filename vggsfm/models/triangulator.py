@@ -90,6 +90,9 @@ class Triangulator(nn.Module):
             # focal_length, principal_point : B x S x 2
 
             extrinsics, intrinsics = get_EFP(pred_cameras, image_size, B, S, False, trg_intrinsics)
+            # 1 x S x 3 x 4
+            # NOTE: This is just for w/o BA experiment. when running w/o ba, you need to undo this annotaion
+            # return extrinsics
 
             extrinsics = extrinsics.double()
             inlier_fmat = preliminary_dict["fmat_inlier_mask"]

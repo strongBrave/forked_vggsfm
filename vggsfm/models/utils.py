@@ -74,7 +74,6 @@ def get_EFP(pred_cameras, image_size, B, S, default_focal=False, trg_intrinsics=
         assert trg_intrinsics.shape[0] == 3 and trg_intrinsics.shape[1] == 3
         intrinsics = trg_intrinsics.expand(B, S, -1, -1)
 
-
     return extrinsics, intrinsics
 
 

@@ -72,16 +72,16 @@ def demo_fn(cfg: DictConfig):
 
     # Run VGGSfM
     # Both visualization and output writing are performed inside VGGSfMRunner
-    predictions = vggsfm_runner.run(
-        images, # [B, 3, H, W]
-        masks=masks, # [B, 1, H, W]
-        original_images=original_images,
-        image_paths=image_paths,
-        crop_params=crop_params,
-        seq_name=seq_name,
-        output_dir=output_dir,
-        trg_intrinsics=trg_intrinsics
-    )
+    # predictions = vggsfm_runner.run(
+    #     images, # [B, 3, H, W]
+    #     masks=masks, # [B, 1, H, W]
+    #     original_images=original_images,
+    #     image_paths=image_paths,
+    #     crop_params=crop_params,
+    #     seq_name=seq_name,
+    #     output_dir=output_dir,
+    #     trg_intrinsics=trg_intrinsics
+    # )
 
     # print(torch.argwhere(masks[0, 0] == 0).shape)
     print("Demo Finished Successfully")

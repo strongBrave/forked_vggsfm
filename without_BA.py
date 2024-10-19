@@ -4,14 +4,14 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
-
+# NOTE: when running this code w/o ba, you need to modift one line of triangulator.py.
 import torch
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import os
 
 from torch.utils.data import DataLoader
-from vggsfm.runners.runner import VGGSfMRunner
+from vggsfm.runners.without_BA_runner import VGGSfMRunner
 from vggsfm.datasets.linemod import LineMod
 from vggsfm.utils.utils import seed_all_random_engines
 from loguru import logger
@@ -26,7 +26,7 @@ def demo_fn(cfg: DictConfig):
     """
 
     OmegaConf.set_struct(cfg, False)
-    logger.add(sink="linemod.log")
+    logger.add(sink="without_ba.log")
 
     # Print configuration
     print("Model Config:", OmegaConf.to_yaml(cfg))
@@ -97,19 +97,19 @@ def demo_fn(cfg: DictConfig):
                 avg_cls_metric[key] = avg_cls_metric.get(key, 0) + value
             per_cls_metrics[start_image_no] = metric
         
-        batch_count = avg_cls_metric["batch_count"]
         # calculate average metrics
-        avg_cls_metric = {key: value / batch_count for key, value in avg_cls_metric.items() if key != 'batch_count'}
+        avg_cls_metric["batch_count"] = batch_count
+        avg_cls_metric = {key: value / batch_count for key, value in avg_cls_metric.items()}
         avg_cls_metric["batch_count"] = batch_count    
         avg_cls_metrics[test_dataset.current_cls_name] = avg_cls_metric   
 
 
         logger.info(f"{test_dataset.current_cls_name} mean metric: {avg_cls_metric}")
-        save_metrics_to_json(save_path=os.path.join(cls_dir, "metrics.json"), metrics=per_cls_metrics)
+        save_metrics_to_json(save_path=os.path.join(cls_dir, "metrics_without_ba.json"), metrics=per_cls_metrics)
         logger.success(f"Successfully save {test_dataset.current_cls_name} metrics json to {os.path.join(cls_dir, 'metrics.json')}.")
 
     logger.info(f"avg_cls_metrics information after {i + 1} update: {avg_cls_metrics}")
-    save_metrics_to_json(save_path=cfg.SAVE_JSON_DIR+"avg_cls_metrics.json", metrics=avg_cls_metrics) # save mean metrics
+    save_metrics_to_json(save_path=cfg.SAVE_JSON_DIR+"avg_cls_metrics_without_ba.json", metrics=avg_cls_metrics) # save mean metrics
     logger.success(f"Successfully save avg_cls_metrics.json")
     logger.info("Demo Finished Successfully")
 
