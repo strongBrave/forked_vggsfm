@@ -390,7 +390,7 @@ class LineMod(Dataset):
             ff = self.trg_intrinsics[[0, 1], [0, 1]].clone()
             ppxy = self.trg_intrinsics[[0, 1], [2, 2]].clone()
             new_f = ff * s
-            new_ppxy = s * ppxy - bbx_top_left_afer_scale
+            new_ppxy = s * ppxy - bbx_top_left_afer_scale # note: not right, the s should be 1024 / crop_longest_size 
             self.trg_intrinsics[[0, 1], [0, 1]] = new_f
             self.trg_intrinsics[[0, 1], [2, 2]] = new_ppxy
 

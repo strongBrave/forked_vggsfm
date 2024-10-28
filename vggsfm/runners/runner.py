@@ -44,6 +44,7 @@ from vggsfm.utils.utils import (
     average_camera_prediction,
     create_video_with_reprojections,
     save_video_with_reprojections,
+    make_html
 )
 
 
@@ -218,6 +219,8 @@ class VGGSfMRunner:
             dict: A dictionary containing the predictions from the reconstruction process.
         """
         self.start_image_no = str(int(os.path.splitext(os.path.basename(image_paths[0]))[0])) # 每个batch的第一张照片的编号, int操作为了去除前置0
+        self.cls_name = image_paths[0].split("/")[-3]
+
         if output_dir is None:
             now = datetime.datetime.now()
             timestamp = now.strftime("%Y%m%d_%H%M")
@@ -305,6 +308,9 @@ class VGGSfMRunner:
                     self.save_reprojection_video(
                         img_with_circles_list, video_size, output_dir
                     )
+            
+            if self.cfg.make_html:
+                make_html(predictions, gt_poses, images[0], self.cls_name)
 
             # Visualize the 3D reconstruction if enabled
             # When doing pose_estimation, visualization is cancelled

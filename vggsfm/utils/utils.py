@@ -3,11 +3,6 @@
 #
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
-
-
-import matplotlib
-import numpy as np
-
 import torch
 import torch.nn.functional as F
 import os
@@ -18,8 +13,29 @@ import struct
 from tqdm import tqdm
 from .metric import closed_form_inverse, closed_form_inverse_OpenCV
 
+from pytorch3d.renderer import PerspectiveCameras
+from pytorch3d.vis.plotly_vis import plot_scene
+
 from scipy.spatial.transform import Rotation as sciR
-from minipytorch3d.cameras import CamerasBase, PerspectiveCameras
+
+from vggsfm.utils.align import(
+    _align_camera_extrinsics_PT3D,
+    align_and_transform_cameras_PT3D
+)
+
+import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
+import plotly
+import base64
+import io
+
+cmap = plt.get_cmap("hsv")
+
+HTML_TEMPLATE = """<html><head><meta charset="utf-8"/></head>
+<body><img src="data:image/png;charset=utf-8;base64,{image_encoded}"/>
+{plotly_html}</body></html>"""
+
 
 
 def average_camera_prediction(
@@ -837,3 +853,108 @@ def sample_subrange(N, idx, L):
             start = max(0, end - L)  # Extend start backward if possible
 
     return start, end
+
+
+def opencv_to_pytorch3d(R: torch.tensor, T: torch.tensor):
+    print(R.shape, T.shape)
+    R = R.clone().permute(0, 2, 1)
+    R[:, :, :2] *= -1
+    T[:, :2] *= -1
+
+    return R, T
+
+def view_color_coded_images_from_tensor(images):
+    num_frames = images.shape[0]
+    num_rows = 2
+    num_cols = 5
+    figsize = (num_cols * 2, num_rows * 2)
+    fig, axs = plt.subplots(num_rows, num_cols, figsize=figsize)
+    axs = axs.flatten()
+    for i in range(num_rows * num_cols):
+        if i < num_frames:
+            axs[i].imshow(unnormalize_image(images[i]))
+            for s in ["bottom", "top", "left", "right"]:
+                axs[i].spines[s].set_color(cmap(i / (num_frames)))
+                axs[i].spines[s].set_linewidth(5)
+            axs[i].set_xticks([])
+            axs[i].set_yticks([])
+        else:
+            axs[i].axis("off")
+    plt.tight_layout()
+
+def unnormalize_image(image):
+    if isinstance(image, torch.Tensor):
+        image = image.cpu().numpy()
+    if image.shape[0] == 3:
+        image = image.transpose(1, 2, 0)
+    mean = np.array([0.5, 0.5, 0.5])
+    std = np.array([0.5, 0.5, 0.5])
+    image = image * std + mean
+    return (image * 255.0).astype(np.uint8)
+
+
+def plotly_scene_visualization(R_pred, T_pred, R_gt=None, T_gt=None):
+    # TODO: Before visulize in the same fig, the pred and gt need to be aligned, including camera center and extrinsics
+    print("R_pred shape: ", R_pred.shape)
+    print("T_pred shape: ", T_pred.shape)
+    print("R_gt shape: ", R_gt.shape)
+    print("T_gt shape: ", T_gt.shape)
+    
+    gt_color = (212 / 255, 152 / 255, 42 / 255)
+    cameras_pred = torch.cat((R_pred, T_pred[:, :, None]), dim=-1).float()  # (B, 3, 4)
+    cameras_gt = torch.cat((R_gt, T_gt[:, :, None]), dim=-1).float()
+    align_t_R, align_t_T, align_t_s = _align_camera_extrinsics_PT3D(cameras_src=cameras_pred, cameras_tgt=cameras_gt)
+    R_pred_aligned, T_pred_aligned= align_and_transform_cameras_PT3D(cameras_pred, align_t_R, align_t_T, align_t_s)
+    
+    num_frames = len(R_pred)
+    camera = {}
+    for i in range(2 * num_frames):
+        if i < num_frames:
+            camera[f"pred_{i}"] = PerspectiveCameras(R=R_pred_aligned[i, None], T=T_pred_aligned[i, None])
+        else:
+            camera[f"gt_{i-num_frames}"] = PerspectiveCameras(R=R_gt[i-num_frames, None], T=T_gt[i-num_frames, None])
+
+
+    fig = plot_scene( 
+        {"scene": camera},
+        camera_scale=0.03,
+    )
+    fig.update_scenes(aspectmode="data")
+
+    cmap = plt.get_cmap("hsv")
+    for i in range(2 * num_frames):
+        if i < num_frames:
+            fig.data[i].line.color = matplotlib.colors.to_hex(cmap(i / (num_frames)))     
+            fig.data[i].name = f"pred_{i}"  # Label for pred cameras                
+        else:
+            fig.data[i].line.color = matplotlib.colors.to_hex(gt_color)     
+            fig.data[i].name = f"gt_{i-num_frames}"  # Label for pred cameras               
+    return fig
+
+
+def make_html(predictions, gt_poses, images, cls_name):
+    # Visualize cropped and resized images
+    pred_R = predictions["extrinsics_opencv"][:, :, :3].float()
+    pred_T = predictions["extrinsics_opencv"][:, :, 3].float()
+    print(pred_R.shape, pred_T.shape)
+    gt_R = torch.from_numpy(gt_poses)[:, :, :3].float().to(pred_R.device)
+    gt_T = torch.from_numpy(gt_poses)[:, :, 3].float().to(pred_R.device)
+    print(gt_R.shape, gt_T.shape)
+
+    pred_R, pred_T = opencv_to_pytorch3d(pred_R, pred_T)
+    gt_R, gt_T = opencv_to_pytorch3d(gt_R, gt_T)
+
+
+    fig = plotly_scene_visualization(pred_R, pred_T, gt_R, gt_T)
+    html_plot = plotly.io.to_html(fig, full_html=False, include_plotlyjs="cdn")
+    s = io.BytesIO()
+    view_color_coded_images_from_tensor(images)
+    plt.savefig(s, format="png", bbox_inches="tight")
+    plt.close()
+    image_encoded = base64.b64encode(s.getvalue()).decode("utf-8").replace("\n", "")
+    with open(os.path.join("html", cls_name+".html"), "w") as f:
+        s = HTML_TEMPLATE.format(
+            image_encoded=image_encoded,
+            plotly_html=html_plot,
+        )
+        f.write(s)

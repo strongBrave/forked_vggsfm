@@ -57,6 +57,7 @@ use_poselib: True
 
 shift_point2d_to_original_res: False
 
+make_html: True
 make_reproj_video: False
 
 visual_tracks: False
