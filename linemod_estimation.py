@@ -4,6 +4,13 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+"""
+run command: python linemod_estimation.py SCENE_DIR='home/yujunhao/yujunhao/Dataset/LINEMOD',
+or python without_BA.py SCENE_DIR='home/yujunhao/yujunhao/Dataset/LINEMOD'.
+
+This adapation must need pytorch3d dependency.
+"""
+
 
 import torch
 import hydra

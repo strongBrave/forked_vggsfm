@@ -486,17 +486,17 @@ def compoute_metric(model_path,
                     percentage=0.1,
                     t_scale='m'):
     model_3d_pts = get_all_points_on_model(model_path)
-    trans_diff = translation_meters(gt_pose[:, 3], pred_pose[:, 3], input_unit=t_scale) # tensor
+    trans_diff = translation_meters(tvec_gt=gt_pose[:, 3], tvec_pred=pred_pose[:, 3], input_unit=t_scale) # tensor
     rota_diff = rotation_angle( # tensor
-        pred_pose[:3, :3].unsqueeze(0),
-        gt_pose[:3, :3].unsqueeze(0),
+        rot_pred=pred_pose[:3, :3].unsqueeze(0),
+        rot_gt=gt_pose[:3, :3].unsqueeze(0),
     ) 
     trans_diff_degree = translation_angle( # tensor
-        pred_pose[:3, 3].unsqueeze(0),
-        gt_pose[:3, 3].unsqueeze(0),
+        tvec_pred=pred_pose[:3, 3].unsqueeze(0),
+        tvec_gt=gt_pose[:3, 3].unsqueeze(0),
     )
-    proj_2d_err = projection_2d_error(model_3d_pts, pred_pose, gt_pose, t_scale=t_scale)
-    ADD = add_metric(model_3d_pts, pred_pose, gt_pose, diameter=diameter, percentage=percentage)
+    proj_2d_err = projection_2d_error(model_3d_pts, pred_pose=pred_pose, gt_pose=gt_pose, t_scale=t_scale)
+    ADD = add_metric(model_3d_pts, pred_pose=pred_pose, gt_pose=gt_pose, diameter=diameter, percentage=percentage)
 
     metrics = {
     "rotation_error": rota_diff.item(),
