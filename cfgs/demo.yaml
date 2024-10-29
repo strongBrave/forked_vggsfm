@@ -16,6 +16,8 @@ shuffle: False # dataloader setting up
 batch_size: 10
 
 SAVE_JSON_DIR: "json/"
+SAVE_HTML_DIR: html/
+without_ba: False
 
 center_order: False
 mixed_precision: fp16
@@ -46,7 +48,7 @@ avg_pose: True
 shared_camera: True
 
 save_to_disk: False
-SCENE_DIR: examples/kitchen
+SCENE_DIR: LINEMOD/
 
 resume_ckpt:  ckpt/vggsfm_v2_0_0.bin
 auto_download_ckpt: False

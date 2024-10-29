@@ -186,6 +186,7 @@ class VGGSfMRunner:
         seq_name=None,
         output_dir=None,
         trg_intrinsics=None,
+        id=id,
     ):
         """
         Executes the full VGGSfM pipeline on a set of input images.
@@ -218,7 +219,7 @@ class VGGSfMRunner:
         Returns:
             dict: A dictionary containing the predictions from the reconstruction process.
         """
-        self.start_image_no = str(int(os.path.splitext(os.path.basename(image_paths[0]))[0])) # 每个batch的第一张照片的编号, int操作为了去除前置0
+        self.test_image_no = str(int(os.path.splitext(os.path.basename(image_paths[-1]))[0])) # 每个batch的第一张照片的编号, int操作为了去除前置0
         self.cls_name = image_paths[0].split("/")[-3]
 
         if output_dir is None:
@@ -257,11 +258,11 @@ class VGGSfMRunner:
                 )
             except ValueError as e:
                 logger.error(f"value error in sparse_reconstruct: {e}")
-                logger.info(f"invalid data with start image no: {self.start_image_no}")
+                logger.info(f"invalid data with start image no: {self.test_image_no}")
                 return None
             except Exception as e:
                 logger.error(f"other error in sparse reconstruct: {e}")
-                logger.info(f"invalid data with start image no: {self.start_image_no}")
+                logger.info(f"invalid data with start image no: {self.test_image_no}")
                 return None
 
             # Save the sparse reconstruction results
@@ -309,8 +310,8 @@ class VGGSfMRunner:
                         img_with_circles_list, video_size, output_dir
                     )
             
-            if self.cfg.make_html:
-                make_html(predictions, gt_poses, images[0], self.cls_name)
+            if self.cfg.make_html and id % 50 == 0:
+                make_html(predictions, gt_poses, images[0], self.cfg, self.cls_name, id=self.test_image_no)
 
             # Visualize the 3D reconstruction if enabled
             # When doing pose_estimation, visualization is cancelled
@@ -324,20 +325,17 @@ class VGGSfMRunner:
 
             metric = self.calculate_metric(pred_poses=predictions["extrinsics_opencv"],
                                            gt_poses=gt_poses,
-                                           batch_size=self.cfg.batch_size,
-                                           start_imge_no=self.start_image_no,
                                            model_path=model_path)
             
             predictions["metric"] = metric
 
             return predictions
         
-    def calculate_metric(self, pred_poses, gt_poses, batch_size, start_imge_no, model_path):
+    def calculate_metric(self, pred_poses, gt_poses, model_path):
         # calculate metric
         test_pred_pose, test_gt_pose = align_gt(pred_poses=pred_poses,
                                                 gt_poses=gt_poses,
-                                                batch_size=self.cfg.batch_size,
-                                                start_image_no=self.start_image_no)
+                                                batch_size=self.cfg.batch_size,)
         
         metric = compoute_metric(model_path=model_path,
                         pred_pose=test_pred_pose,
@@ -680,9 +678,8 @@ class VGGSfMRunner:
             }
             intrinsics_original_res = []
             # We assume the returned extri and intri cooresponds to the order of sorted image_paths
-            # TODO: check this, 返回的内参和外参矩阵是按照片编号从小到大对应的
+            # TODO: check this, 返回的内参矩阵是按照片编号从小到大对应的, 外参不是
             for fname in sorted(image_paths):
-                print("fname: ", fname)
                 pyimg = reconstruction.images[fname_to_id[fname]]
                 pycam = reconstruction.cameras[pyimg.camera_id]
                 intrinsics_original_res.append(pycam.calibration_matrix())
@@ -955,7 +952,7 @@ class VGGSfMRunner:
         visual_dir = os.path.join(output_dir, "visuals")
         os.makedirs(visual_dir, exist_ok=True)
         save_video_with_reprojections(
-            os.path.join(visual_dir, self.start_image_no + "_reproj.mp4"),
+            os.path.join(visual_dir, self.test_image_no + "_reproj.mp4"),
             img_with_circles_list,
             video_size,
         )
@@ -978,7 +975,7 @@ class VGGSfMRunner:
         if output_dir is None:
             output_dir = os.path.join("output", seq_name) # seq_name indicates class name
 
-        sfm_output_dir = os.path.join(output_dir, "sparse", self.start_image_no)
+        sfm_output_dir = os.path.join(output_dir, "sparse", self.test_image_no)
         print("-" * 50)
         print(
             f"The output has been saved in COLMAP style at: {sfm_output_dir} "

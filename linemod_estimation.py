@@ -16,10 +16,11 @@ import torch
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import os
+from tqdm import tqdm
 
 from torch.utils.data import DataLoader
 from vggsfm.runners.runner import VGGSfMRunner
-from vggsfm.datasets.linemod import LineMod
+from vggsfm.datasets.linemod import LineMod, merge_batch
 from vggsfm.utils.utils import (
     seed_all_random_engines, 
     opencv_to_pytorch3d, 
@@ -60,56 +61,74 @@ def demo_fn(cfg: DictConfig):
         normalize_cameras=False,
         load_gt=cfg.load_gt,
         pose_estimation=cfg.pose_estimation,
-        shuffle=cfg.shuffle,
+        shuffle=True,
+        split="test",
     )
 
-    test_dataloader = DataLoader(test_dataset, batch_size=cfg.batch_size, shuffle=cfg.shuffle, drop_last=True, 
+    train_dataset = LineMod(
+        root_dir=cfg.SCENE_DIR, 
+        img_size=cfg.img_size,
+        normalize_cameras=False,
+        load_gt=cfg.load_gt,
+        pose_estimation=cfg.pose_estimation,
+        shuffle=cfg.shuffle,
+        split="train",
+    )
+
+    train_dataloader = DataLoader(train_dataset, batch_size=cfg.batch_size-1, shuffle=cfg.shuffle, drop_last=True, 
+                                collate_fn=test_dataset.custom_collate_fn)
+
+    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=cfg.shuffle, drop_last=True, 
                                  collate_fn=test_dataset.custom_collate_fn)
 
     avg_cls_metrics = {} # 存储所有了类的avg_cls_metric
     with torch.no_grad():
-        for i in range(len(test_dataset.cls_dirs)):
+        for i in tqdm(range(len(test_dataset.cls_dirs))):
 
             test_dataset.set_cls_idx(i)
+            train_dataset.set_cls_idx(i)
             cls_dir = test_dataset.out_dir[test_dataset.current_cls_idx]
             model_path=os.path.join(cls_dir, test_dataset.current_cls_name + ".ply")
             logger.info(f"Starting to Process {test_dataset.current_cls_name} data")
 
             per_cls_metrics = {} # 存储每个类的每个batch的metric
             avg_cls_metric = {} # 存储每个类的每个metric的平均值
-            batch_count = 0 # 对于最后做平均操作
+            train_batch = next(iter(train_dataloader))
 
-            for images, masks, poses, crop_params, original_images, image_paths, _, _ in test_dataloader:
-                if cfg.shuffle:
-                    image_paths = sorted(image_paths)
-                start_image_no = str(int(os.path.splitext(os.path.basename(image_paths[0]))[0]))
-                batch_count += 1
+            for id, test_batch in tqdm(enumerate(test_dataloader), desc=f"{test_dataset.current_cls_name}", leave=False):
                 
-                logger.success(f"Successfully load {test_dataset.current_cls_name} data from {start_image_no} to {str(int(start_image_no) + 10)}")
+                batch_count = test_batch['n'] # 对于最后做平均操作
+                batch = merge_batch(train_batch, test_batch)
+                # note: do not sort the image_paths
+                image_paths = batch['image_path']
+
+                test_image_no = str(int(os.path.splitext(os.path.basename(image_paths[-1]))[0]))
+                
+                logger.success(f"Successfully load {test_dataset.current_cls_name} no {test_image_no} data")
                 
                 # Run VGGSfM
                 # Both visualization and output writing are performed inside VGGSfMRunner
                 predictions = vggsfm_runner.run(
-                    images, # [B, 3, H, W]
-                    gt_poses=poses,
-                    masks=masks, # [B, 1, H, W]
-                    original_images=original_images,
+                    batch['image'], # [B, 3, H, W]
+                    gt_poses=batch['pose'],
+                    masks=batch['mask'], # [B, 1, H, W]
+                    original_images=batch['original_image'],
                     image_paths=image_paths,
-                    crop_params=crop_params,
+                    crop_params=batch['crop_params'],
                     seq_name=test_dataset.current_cls_name,
                     output_dir=test_dataset.out_dir[test_dataset.current_cls_idx],
                     trg_intrinsics=test_dataset.trg_intrinsics,
                     model_path=model_path,
+                    id=id,
                 )
 
                 metric = predictions["metric"]
-                logger.info(f"{start_image_no} metric: {metric}")
+                logger.info(f"{test_dataset.current_cls_name} -- {test_image_no} metric: {metric}")
                 
                 for key, value in metric.items():
                     avg_cls_metric[key] = avg_cls_metric.get(key, 0) + value
-                per_cls_metrics[start_image_no] = metric
+                per_cls_metrics[test_image_no] = metric
                     
-            avg_cls_metric["batch_count"] = batch_count
             # calculate average metrics
             avg_cls_metric = {key: value / batch_count for key, value in avg_cls_metric.items()}
             avg_cls_metric["batch_count"] = batch_count    
@@ -118,10 +137,10 @@ def demo_fn(cfg: DictConfig):
 
             logger.info(f"{test_dataset.current_cls_name} mean metric: {avg_cls_metric}")
             save_metrics_to_json(save_path=os.path.join(cls_dir, "metrics.json"), metrics=per_cls_metrics)
-            logger.success(f"Successfully save {test_dataset.current_cls_name} metrics json to {os.path.join(cls_dir, 'metrics.json')}.")
+            logger.success(f"Successfully save {test_dataset.current_cls_name} metrics json to {os.path.join(cls_dir, 'metrics_lm_onepose.json')}.")
 
     logger.info(f"avg_cls_metrics information after {i + 1} update: {avg_cls_metrics}")
-    save_metrics_to_json(save_path=cfg.SAVE_JSON_DIR+"avg_cls_metrics.json", metrics=avg_cls_metrics) # save mean metrics
+    save_metrics_to_json(save_path=cfg.SAVE_JSON_DIR+"avg_cls_metrics_lm_onepose.json", metrics=avg_cls_metrics) # save mean metrics
     logger.success(f"Successfully save avg_cls_metrics.json")
     logger.info("Demo Finished Successfully")
 

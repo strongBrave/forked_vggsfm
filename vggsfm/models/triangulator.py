@@ -48,6 +48,7 @@ class Triangulator(nn.Module):
         pred_vis, # 预测的可见度
         images, # 测试照片
         preliminary_dict,
+        without_ba=False,
         pred_score=None,
         init_max_reproj_error=0.5,
         BA_iters=2,
@@ -92,7 +93,8 @@ class Triangulator(nn.Module):
             extrinsics, intrinsics = get_EFP(pred_cameras, image_size, B, S, False, trg_intrinsics)
             # 1 x S x 3 x 4
             # NOTE: This is just for w/o BA experiment. when running w/o ba, you need to undo this annotaion
-            # return extrinsics
+            if without_ba:
+                return extrinsics
 
             extrinsics = extrinsics.double()
             inlier_fmat = preliminary_dict["fmat_inlier_mask"]

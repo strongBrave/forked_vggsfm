@@ -298,7 +298,7 @@ def test_align_camera_extrinsics(num_tests=10000):
 
             pdb.set_trace()
 
-def align_gt(pred_poses, gt_poses, batch_size, start_image_no):
+def align_gt(pred_poses, gt_poses, batch_size):
     """
     Align pred pose with target pose. use the front B - 1 pred_pose to extimate align roation, 
     translation and scale factor. Return the last aligned pose.
@@ -311,8 +311,7 @@ def align_gt(pred_poses, gt_poses, batch_size, start_image_no):
         test_gt_pose (tensor): the corresponding gt poses.  3 x 4
     """
  
-    start_image_no = int(start_image_no)
-    end_image_no = start_image_no + batch_size
+
     pred_poses = pred_poses.float()
     gt_poses = torch.tensor(gt_poses, device=pred_poses.device).float()
 

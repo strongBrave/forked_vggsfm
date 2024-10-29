@@ -32,6 +32,23 @@ from .camera_transform import (
 Image.MAX_IMAGE_PIXELS = None
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
+def merge_batch(train_batch, test_batch):
+    batch = copy.deepcopy(train_batch)
+    for key, value in train_batch.items():
+        if isinstance(value, torch.Tensor):
+            batch[key] = torch.concat((train_batch[key], test_batch[key]), dim=0)
+        elif key == "pose":
+             batch[key] = np.concatenate((train_batch[key], test_batch[key]), axis=0)            
+        elif key in ['image_path', 'mask_path', 'pose_path']:
+            batch[key].extend(test_batch[key])
+        elif key == 'n':
+            batch[key] = test_batch['n']
+        elif key == "original_image":
+            batch[key].update(test_batch[key])
+        else:
+            pass
+    return batch
+
 
 class LineMod(Dataset):
     def __init__(
@@ -46,6 +63,7 @@ class LineMod(Dataset):
         prefix: str = "images",
         pose_estimation: bool=False,
         shuffle: bool=False,
+        split="train",
     ):
         """
         Initialize the DemoLoader dataset.
@@ -74,11 +92,27 @@ class LineMod(Dataset):
         # NOTE: This remove operation is optional, which depends on your file structure.
         self.cls_dirs.remove(".DS_Store")
         self.cls_dirs.remove("intrinsics.npy")
+        self.processed_image_path_txt_paths = []
+
+        if isinstance(split, str):
+            split = [split]
+
+        if "train" in split:
+            self.processed_image_path_txt_paths = [os.path.join(root_dir, class_name, "train.txt") for class_name in self.cls_dirs]
+        if "test" in split:
+            self.processed_image_path_txt_paths = [os.path.join(root_dir, class_name, "test.txt") for class_name in self.cls_dirs]
+        
 
         self.crop_longest = True
         self.load_gt = load_gt
         self.sort_by_filename = sort_by_filename 
-        self.sequences = {class_name: self._load_images(glob.glob(os.path.join(root_dir, class_name, "images/*"))) for class_name in self.cls_dirs}
+        self.sequences = {}
+
+        for processed_image_path_txt_path in self.processed_image_path_txt_paths:
+            class_name = os.path.basename(os.path.dirname(processed_image_path_txt_path))
+            self.sequences[class_name] = self._load_images(self._load_processed_image_path(processed_image_path_txt_path))
+        
+
         self.prefix = prefix
         self.pose_estimation = pose_estimation # indicate if this is pose_estimation task
         self.first_pose = True # 控制self.trg_intrinsics更新一次，防止增量更新
@@ -100,8 +134,8 @@ class LineMod(Dataset):
 
 
 
-        if self.sort_by_filename and not shuffle: # 对文件照片排序
-            self.sequences = {class_name: self._load_images(sorted(glob.glob(os.path.join(root_dir, class_name, "images/*")))) for class_name in self.cls_dirs}
+        # if self.sort_by_filename and not shuffle: # 对文件照片排序
+        #     self.sequences = {class_name: self._load_images(sorted(self._load_processed_image_path(processed_image_path_txt_path)))}
 
         self.transform = transform or transforms.Compose(
             [transforms.ToTensor(), transforms.Resize(img_size, antialias=True)]
@@ -114,6 +148,11 @@ class LineMod(Dataset):
         self.normalize_cameras = normalize_cameras
 
         print(f"Data size of Sequence: {len(self)}")
+
+    def _load_processed_image_path(self, processed_image_path_txt_path):
+        with open(processed_image_path_txt_path, 'r') as file:
+            address_list = [line.strip() for line in file if line.strip()]
+        return address_list
     
     # custome collate function
     def custom_collate_fn(self, batch):
@@ -124,6 +163,7 @@ class LineMod(Dataset):
         image_paths = [item['image_path'] for item in batch]
         mask_paths = [item['mask_path'] for item in batch]
         pose_paths = [item['pose_path'] for item in batch]
+        n = [item['n'] for item in batch][0]
 
             # 处理 original_image 是字典的情况
         original_images = {}
@@ -131,8 +171,20 @@ class LineMod(Dataset):
             for key, value in item['original_image'].items():  # 动态遍历每个 original_image 中的键和值
                 if key not in original_images:
                     original_images[key] = value
+        
+        batch = {
+            'image': images, 
+            "mask": masks,  
+            "pose": poses, 
+            "crop_params": crop_params, 
+            "original_image": original_images, 
+            "image_path": image_paths,
+            "mask_path": mask_paths, 
+            "pose_path": pose_paths, 
+            'n': n,
+        }
 
-        return (images, masks, poses, crop_params, original_images, image_paths, mask_paths, pose_paths)
+        return batch
 
     def set_cls_idx(self, cls_idx):
         self.current_cls_idx = cls_idx
@@ -278,6 +330,7 @@ class LineMod(Dataset):
 
 
         metadata = self.sequences[self.current_cls_name] # 包含很多字典的list, {'img_path', 'R', 'R', 'ff', 'ppxy'}
+        n = len(metadata)
         if ids is None:
             ids = np.arange(len(metadata)) # frame的数量
 
@@ -298,6 +351,7 @@ class LineMod(Dataset):
             "image_path": image_path, # string
             "mask_path": mask_path, # string
             "pose_path": pose_path, # string
+            "n": n,
         }
         return sample
 
@@ -595,3 +649,6 @@ def _crop_image(image, bbox, white_bg=False):
         )
     return image_crop
 
+
+if __name__ == "__main__":
+    pass

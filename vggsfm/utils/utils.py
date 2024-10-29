@@ -894,12 +894,8 @@ def unnormalize_image(image):
 
 
 def plotly_scene_visualization(R_pred, T_pred, R_gt=None, T_gt=None):
+
     # TODO: Before visulize in the same fig, the pred and gt need to be aligned, including camera center and extrinsics
-    print("R_pred shape: ", R_pred.shape)
-    print("T_pred shape: ", T_pred.shape)
-    print("R_gt shape: ", R_gt.shape)
-    print("T_gt shape: ", T_gt.shape)
-    
     gt_color = (212 / 255, 152 / 255, 42 / 255)
     cameras_pred = torch.cat((R_pred, T_pred[:, :, None]), dim=-1).float()  # (B, 3, 4)
     cameras_gt = torch.cat((R_gt, T_gt[:, :, None]), dim=-1).float()
@@ -932,14 +928,13 @@ def plotly_scene_visualization(R_pred, T_pred, R_gt=None, T_gt=None):
     return fig
 
 
-def make_html(predictions, gt_poses, images, cls_name):
+def make_html(predictions, gt_poses, images, cfg, cls_name, id):
     # Visualize cropped and resized images
     pred_R = predictions["extrinsics_opencv"][:, :, :3].float()
     pred_T = predictions["extrinsics_opencv"][:, :, 3].float()
-    print(pred_R.shape, pred_T.shape)
     gt_R = torch.from_numpy(gt_poses)[:, :, :3].float().to(pred_R.device)
     gt_T = torch.from_numpy(gt_poses)[:, :, 3].float().to(pred_R.device)
-    print(gt_R.shape, gt_T.shape)
+
 
     pred_R, pred_T = opencv_to_pytorch3d(pred_R, pred_T)
     gt_R, gt_T = opencv_to_pytorch3d(gt_R, gt_T)
@@ -952,7 +947,22 @@ def make_html(predictions, gt_poses, images, cls_name):
     plt.savefig(s, format="png", bbox_inches="tight")
     plt.close()
     image_encoded = base64.b64encode(s.getvalue()).decode("utf-8").replace("\n", "")
-    with open(os.path.join("html", cls_name+".html"), "w") as f:
+
+    html_output_dir = os.path.join(cfg.SAVE_HTML_DIR, cls_name)
+    os.makedirs(html_output_dir, exist_ok=True)
+    
+    if cfg.without_ba:
+        html_output_path = os.path.join(html_output_dir, f"{cls_name}_wo_ba_{id}.html")
+    else:
+        html_output_path = os.path.join(html_output_dir, f"{cls_name}_w_ba_{id}.html")
+    
+    if os.path.exists(html_output_path):
+        os.remove(html_output_path)
+
+    if id is None:
+        id = "demo"
+
+    with open(html_output_path, "w") as f:
         s = HTML_TEMPLATE.format(
             image_encoded=image_encoded,
             plotly_html=html_plot,
