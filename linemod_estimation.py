@@ -73,9 +73,6 @@ def demo_fn(cfg: DictConfig):
         split="train",
     )
 
-    train_dataloader = DataLoader(train_dataset, batch_size=cfg.batch_size-1, shuffle=cfg.shuffle, drop_last=True, 
-                                collate_fn=test_dataset.custom_collate_fn)
-
     test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=cfg.shuffle, drop_last=True, 
                                  collate_fn=test_dataset.custom_collate_fn)
 
@@ -86,12 +83,16 @@ def demo_fn(cfg: DictConfig):
             test_dataset.set_cls_idx(i)
             train_dataset.set_cls_idx(i)
             cls_dir = test_dataset.out_dir[test_dataset.current_cls_idx]
+            
+            # 均匀取照片使相机位姿分散均匀
+            even_reference_ids = np.round(np.linspace(0, len(train_dataset)-1, 9)).astype(int).tolist()
+
             model_path=os.path.join(cls_dir, test_dataset.current_cls_name + ".ply")
             logger.info(f"Starting to Process {test_dataset.current_cls_name} data")
 
             per_cls_metrics = {} # 存储每个类的每个batch的metric
             avg_cls_metric = {} # 存储每个类的每个metric的平均值
-            train_batch = next(iter(train_dataloader))
+            train_batch = train_dataset.get_data(ids=even_reference_ids)
 
             for id, test_batch in tqdm(enumerate(test_dataloader), desc=f"{test_dataset.current_cls_name}", leave=False):
                 

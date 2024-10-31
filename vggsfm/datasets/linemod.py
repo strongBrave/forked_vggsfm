@@ -17,7 +17,7 @@ from typing import Optional, List
 
 from PIL import Image, ImageFile
 from torchvision import transforms
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Sampler
 
 from minipytorch3d.cameras import PerspectiveCameras
 
@@ -168,20 +168,18 @@ class LineMod(Dataset):
             # 处理 original_image 是字典的情况
         original_images = {}
         for item in batch:
-            for key, value in item['original_image'].items():  # 动态遍历每个 original_image 中的键和值
-                if key not in original_images:
-                    original_images[key] = value
+            original_images.update(item['original_image'])
         
         batch = {
-            'image': images, 
-            "mask": masks,  
-            "pose": poses, 
-            "crop_params": crop_params, 
-            "original_image": original_images, 
-            "image_path": image_paths,
-            "mask_path": mask_paths, 
-            "pose_path": pose_paths, 
-            'n': n,
+            'image': images, # tensor
+            "mask": masks,  # tensor
+            "pose": poses, # np
+            "crop_params": crop_params,  # tensor
+            "original_image": original_images, # dict
+            "image_path": image_paths, # list
+            "mask_path": mask_paths, # list
+            "pose_path": pose_paths, # list
+            'n': n, # int
         }
 
         return batch
@@ -307,6 +305,57 @@ class LineMod(Dataset):
         path['mask_path'] = os.path.join(p_dir, "masks", mask_base)
         path['pose_path'] = os.path.join(p_dir, "pose", "pose" + str(image_no) + ".npy")
         return path
+    
+    def _get_data_by_ids(self, annos, n):
+        """
+        Get batch data by ids, the format of batch needs to match the returns of the 
+        customizer collate function of pytorch DataLoader.
+        Params:
+            annos:
+            n: the len of the metadata
+        Returns:
+            batch: Dict
+        """
+        images = []
+        masks = []
+        poses = []
+        image_paths = []
+        mask_paths = []
+        pose_paths = []
+        crop_params= []
+        original_images = {}
+        for anno in annos:
+            image, mask, pose, image_path, mask_path, pose_path = self._load_image_and_mask(anno)
+            image, mask, image_path, crop_paras, original_image = self._prepare_batch(
+                anno, image, mask, image_path
+            ) 
+            images.append(image)
+            masks.append(mask)
+            image_paths.append(image_path)
+            mask_paths.append(mask_path)
+            pose_paths.append(pose_path)
+            poses.append(pose)
+            original_images.update(original_image)
+            crop_params.append(crop_paras)
+        
+        images = torch.stack(images)
+        masks = torch.stack(masks)
+        poses = np.stack(poses)
+        crop_params = torch.stack(crop_params)
+
+        batch = {
+        'image': images, # tensor
+        "mask": masks,  # tensor
+        "pose": poses, # np
+        "crop_params": crop_params,  # tensor
+        "original_image": original_images, # dict
+        "image_path": image_paths, # list
+        "mask_path": mask_paths, # list
+        "pose_path": pose_paths, # list
+        'n': n, # int
+        }   
+
+        return batch
 
 
     def get_data(
@@ -331,9 +380,11 @@ class LineMod(Dataset):
 
         metadata = self.sequences[self.current_cls_name] # 包含很多字典的list, {'img_path', 'R', 'R', 'ff', 'ppxy'}
         n = len(metadata)
-        if ids is None:
-            ids = np.arange(len(metadata)) # frame的数量
-
+        if ids is not None:
+            # ids = np.arange(len(metadata)) # frame的数量
+            annos = [metadata[i] for i in ids]
+            batch = self._get_data_by_ids(annos, n)
+            return batch
 
         anno = metadata[index] # a dict containing {'img_path', 'R', 'R', 'ff', 'ppxy'}
 
