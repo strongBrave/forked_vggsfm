@@ -20,6 +20,7 @@ from tqdm import tqdm
 
 from torch.utils.data import DataLoader
 from vggsfm.runners.runner import VGGSfMRunner
+from vggsfm.runners.without_BA_runner import wo_ba_VGGSfMRunner
 from vggsfm.datasets.linemod import LineMod, merge_batch
 from vggsfm.utils.utils import (
     seed_all_random_engines, 
@@ -50,9 +51,6 @@ def demo_fn(cfg: DictConfig):
 
     # Set seed for reproducibility
     seed_all_random_engines(cfg.seed)
-
-    # Initialize VGGSfM Runner
-    vggsfm_runner = VGGSfMRunner(cfg)
 
     # Load Data
     test_dataset = LineMod(
@@ -104,7 +102,6 @@ def demo_fn(cfg: DictConfig):
 
                 test_image_no = str(int(os.path.splitext(os.path.basename(image_paths[-1]))[0]))
                 
-                logger.success(f"Successfully load {test_dataset.current_cls_name} no {test_image_no} data")
                 
                 # Run VGGSfM
                 # Both visualization and output writing are performed inside VGGSfMRunner
@@ -120,10 +117,12 @@ def demo_fn(cfg: DictConfig):
                     trg_intrinsics=test_dataset.trg_intrinsics,
                     model_path=model_path,
                     id=id,
+                    eval=True,
                 )
 
                 metric = predictions["metric"]
-                logger.info(f"{test_dataset.current_cls_name} -- {test_image_no} metric: {metric}")
+                if id % 100 == 0:
+                    logger.info(f"{test_dataset.current_cls_name} -- {test_image_no} metric: {metric}")
                 
                 for key, value in metric.items():
                     avg_cls_metric[key] = avg_cls_metric.get(key, 0) + value
@@ -136,12 +135,12 @@ def demo_fn(cfg: DictConfig):
 
 
             logger.info(f"{test_dataset.current_cls_name} mean metric: {avg_cls_metric}")
-            save_metrics_to_json(save_path=os.path.join(cls_dir, "metrics.json"), metrics=per_cls_metrics)
-            logger.success(f"Successfully save {test_dataset.current_cls_name} metrics json to {os.path.join(cls_dir, 'metrics_lm_onepose.json')}.")
+            save_metrics_to_json(save_path=os.path.join(cls_dir, f'metrics_lm_onepose_seed{cfg.seed}.json'), metrics=per_cls_metrics)
+            logger.success(f"Successfully save {test_dataset.current_cls_name} metrics json to {os.path.join(cls_dir, f'metrics_lm_onepose_seed{cfg.seed}.json')}.")
 
     logger.info(f"avg_cls_metrics information after {i + 1} update: {avg_cls_metrics}")
-    save_metrics_to_json(save_path=cfg.SAVE_JSON_DIR+"avg_cls_metrics_lm_onepose.json", metrics=avg_cls_metrics) # save mean metrics
-    logger.success(f"Successfully save avg_cls_metrics.json")
+    save_metrics_to_json(save_path=cfg.SAVE_JSON_DIR+f"avg_cls_metrics_lm_onepose_seed{cfg.seed}.json", metrics=avg_cls_metrics) # save mean metrics
+    logger.success(f"Successfully save avg_cls_metrics_lm_onepose_seed{cfg.seed}.json")
     logger.info("Demo Finished Successfully")
 
     return True

@@ -893,13 +893,22 @@ def unnormalize_image(image):
     return (image * 255.0).astype(np.uint8)
 
 
-def plotly_scene_visualization(R_pred, T_pred, R_gt=None, T_gt=None):
+def plotly_scene_visualization(R_pred, T_pred, R_gt=None, T_gt=None, eval=eval):
 
     # TODO: Before visulize in the same fig, the pred and gt need to be aligned, including camera center and extrinsics
     gt_color = (212 / 255, 152 / 255, 42 / 255)
     cameras_pred = torch.cat((R_pred, T_pred[:, :, None]), dim=-1).float()  # (B, 3, 4)
     cameras_gt = torch.cat((R_gt, T_gt[:, :, None]), dim=-1).float()
-    align_t_R, align_t_T, align_t_s = _align_camera_extrinsics_PT3D(cameras_src=cameras_pred, cameras_tgt=cameras_gt)
+    
+    # if eval, the last camera_pred is to test
+    if eval:
+        cameras_src = cameras_pred[:-1]
+        cameras_tgt = cameras_gt[:-1]
+    else:
+        cameras_src = cameras_pred.clone()
+        cameras_tgt = cameras_gt.clone()
+    
+    align_t_R, align_t_T, align_t_s = _align_camera_extrinsics_PT3D(cameras_src=cameras_src, cameras_tgt=cameras_tgt)
     R_pred_aligned, T_pred_aligned= align_and_transform_cameras_PT3D(cameras_pred, align_t_R, align_t_T, align_t_s)
     
     num_frames = len(R_pred)
@@ -928,7 +937,7 @@ def plotly_scene_visualization(R_pred, T_pred, R_gt=None, T_gt=None):
     return fig
 
 
-def make_html(predictions, gt_poses, images, cfg, cls_name, id):
+def make_html(predictions, gt_poses, images, cfg, cls_name, id=None, eval=False):
     # Visualize cropped and resized images
     pred_R = predictions["extrinsics_opencv"][:, :, :3].float()
     pred_T = predictions["extrinsics_opencv"][:, :, 3].float()
@@ -940,7 +949,7 @@ def make_html(predictions, gt_poses, images, cfg, cls_name, id):
     gt_R, gt_T = opencv_to_pytorch3d(gt_R, gt_T)
 
 
-    fig = plotly_scene_visualization(pred_R, pred_T, gt_R, gt_T)
+    fig = plotly_scene_visualization(pred_R, pred_T, gt_R, gt_T, eval=eval)
     html_plot = plotly.io.to_html(fig, full_html=False, include_plotlyjs="cdn")
     s = io.BytesIO()
     view_color_coded_images_from_tensor(images)

@@ -187,6 +187,7 @@ class VGGSfMRunner:
         output_dir=None,
         trg_intrinsics=None,
         id=id,
+        eval=eval,
     ):
         """
         Executes the full VGGSfM pipeline on a set of input images.
@@ -310,8 +311,8 @@ class VGGSfMRunner:
                         img_with_circles_list, video_size, output_dir
                     )
             
-            if self.cfg.make_html and id % 50 == 0:
-                make_html(predictions, gt_poses, images[0], self.cfg, self.cls_name, id=self.test_image_no)
+            if self.cfg.make_html and id % 200 == 0:
+                make_html(predictions, gt_poses, images[0], self.cfg, self.cls_name, id=self.test_image_no, eval=eval)
 
             # Visualize the 3D reconstruction if enabled
             # When doing pose_estimation, visualization is cancelled
@@ -574,6 +575,7 @@ class VGGSfMRunner:
                 pred_vis,
                 images,
                 preliminary_dict,
+                without_ba=self.cfg.without_ba,
                 pred_score=pred_score,
                 BA_iters=self.cfg.BA_iters,
                 shared_camera=self.cfg.shared_camera,

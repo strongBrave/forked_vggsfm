@@ -187,6 +187,7 @@ class VGGSfMRunner:
         output_dir=None,
         trg_intrinsics=None,
         id=id,
+        eval=False,
     ):
         """
         Executes the full VGGSfM pipeline on a set of input images.
@@ -312,8 +313,8 @@ class VGGSfMRunner:
                         img_with_circles_list, video_size, output_dir
                     )
 
-            if self.cfg.make_html and id % 50 == 0:
-                make_html(predictions, gt_poses, images[0], self.cfg, self.cls_name, self.test_image_no)
+            if self.cfg.make_html and id % 200 == 0:
+                make_html(predictions, gt_poses, images[0], self.cfg, self.cls_name, self.test_image_no, eval=eval)
             
 
             # Visualize the 3D reconstruction if enabled
@@ -582,7 +583,6 @@ class VGGSfMRunner:
                 pose_estimation=self.cfg.pose_estimation,
             )
 
-        
         additional_points_dict = None
         
         # if self.cfg.extra_pt_pixel_interval > 0:
@@ -1191,6 +1191,7 @@ def predict_tracks(
 
     frame_num = images.shape[1]
     device = images.device
+    print("device: ", device)
 
     if fmaps_for_tracker is None:
         fmaps_for_tracker = track_predictor.process_images_to_fmaps(images)
@@ -1268,7 +1269,6 @@ def predict_tracks(
     pred_track = torch.cat(pred_track_list, dim=2)
     pred_vis = torch.cat(pred_vis_list, dim=2)
     pred_score = torch.cat(pred_score_list, dim=2)
-
     return pred_track, pred_vis, pred_score
 
 
