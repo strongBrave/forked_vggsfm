@@ -28,7 +28,7 @@ from vggsfm.utils.utils import (
 )
 from loguru import logger
 import numpy as np
-from vggsfm.utils.metric import save_metrics_to_json
+from vggsfm.utils.metric import save_metrics_to_json, json_to_excel
 
 
 @hydra.main(config_path="cfgs/", config_name="demo_wo_ba")
@@ -75,10 +75,6 @@ def demo_fn(cfg: DictConfig):
         split="train",
     )
 
-
-    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=cfg.shuffle, drop_last=True, 
-                                 collate_fn=test_dataset.custom_collate_fn)
-
     avg_cls_metrics = {} # 存储所有了类的avg_cls_metric
     with torch.no_grad():
         for i in tqdm(range(len(test_dataset.cls_dirs))):
@@ -97,8 +93,10 @@ def demo_fn(cfg: DictConfig):
             avg_cls_metric = {} # 存储每个类的每个metric的平均值
             train_batch = train_dataset.get_data(ids=even_reference_ids)
 
-            for id, test_batch in tqdm(enumerate(test_dataloader), desc=f"{test_dataset.current_cls_name}", leave=False):
+            for id in tqdm(range(test_dataset.current_cls_len), desc=f"{test_dataset.current_cls_name}", leave=False):
                 
+                test_batch = test_dataset.get_data(ids=np.arange(id, id+1))
+
                 batch_count = test_batch['n'] # 对于最后做平均操作
                 batch = merge_batch(train_batch, test_batch)
                 # note: do not sort the image_paths
@@ -144,7 +142,12 @@ def demo_fn(cfg: DictConfig):
             logger.success(f"Successfully save {test_dataset.current_cls_name} metrics json to {os.path.join(cls_dir, f'metrics_lm_onepose_seed{cfg.seed}_without_ba.json')}.")
 
     logger.info(f"avg_cls_metrics information after {i + 1} update: {avg_cls_metrics}")
-    save_metrics_to_json(save_path=cfg.SAVE_JSON_DIR+f"avg_cls_metrics_lm_onepose_seed{cfg.seed}_without_ba.json", metrics=avg_cls_metrics) # save mean metrics
+    
+    save_json_path = cfg.SAVE_JSON_DIR+f"avg_cls_metrics_lm_onepose_seed{cfg.seed}_without_ba.json"
+    save_metrics_to_json(save_path=save_json_path, metrics=avg_cls_metrics) # save mean metrics
+    
+    json_to_excel(json_path=save_json_path)
+    
     logger.success(f"Successfully save avg_cls_metrics_lm_onepose_seed{cfg.seed}_without_ba.json")
     logger.info("Demo Finished Successfully")
 

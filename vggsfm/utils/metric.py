@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import os 
 import json
+import pandas as pd
 
 from minipytorch3d.rotation_conversions import (
     matrix_to_quaternion,
@@ -512,4 +513,19 @@ def compoute_metric(model_path,
 def save_metrics_to_json(save_path, metrics):
     with open(save_path, 'w') as f:
         json.dump(metrics, f)
+
+def json_to_excel(json_path):
+    # 将 JSON 文件路径转换为 Excel 文件路径
+    excel_path = json_path.replace("json", "xlsx")
+
+    # 打开 JSON 文件并加载数据
+    with open(json_path, 'r') as file:
+        data = json.load(file)
+
+    # 将 JSON 数据转换为 DataFrame
+    df = pd.DataFrame.from_dict(data, orient='index').reset_index()
+    df = df.rename(columns={'index': 'Object'})  # 将第一列命名为 "Object"
     
+    # 将 DataFrame 写入 Excel 文件
+    df.to_excel(excel_path, index=False)
+    print(f"已成功将数据保存到 {excel_path}")
