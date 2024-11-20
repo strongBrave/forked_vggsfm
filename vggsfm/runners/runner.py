@@ -12,6 +12,7 @@ import torch
 import pycolmap
 import datetime
 from loguru import logger
+from skimage.io import imsave
 
 
 import time
@@ -28,7 +29,12 @@ from vggsfm.two_view_geo.estimate_preliminary import (
     estimate_preliminary_cameras,
 )
 
-from vggsfm.utils.metric import compoute_metric
+from vggsfm.utils.metric import (
+    compute_metric,
+    get_all_points_on_model,
+    pts_range_to_bbox_pts,
+    visualize_final_poses,
+)
 
 from vggsfm.utils.utils import (
     write_array,
@@ -222,6 +228,7 @@ class VGGSfMRunner:
         """
         self.test_image_no = str(int(os.path.splitext(os.path.basename(image_paths[-1]))[0])) # 每个batch的第一张照片的编号, int操作为了去除前置0
         self.cls_name = image_paths[0].split("/")[-3]
+        self.test_image = images[-1]
 
         if output_dir is None:
             now = datetime.datetime.now()
@@ -312,7 +319,22 @@ class VGGSfMRunner:
                     )
             
             if self.cfg.make_html and id % 200 == 0:
-                make_html(predictions, gt_poses, images[0], self.cfg, self.cls_name, id=self.test_image_no, eval=eval)
+                html_output_path = make_html(predictions, gt_poses, images[0], self.cfg, self.cls_name, id=self.test_image_no, eval=eval)
+                object_pts = get_all_points_on_model(model_path)
+                object_bbox_3d = pts_range_to_bbox_pts(np.max(object_pts, 0), np.min(object_pts, 0))
+                test_image_basename = os.path.basename(image_paths[-1])
+                test_image = original_images[test_image_basename] # np.array (H, W, 3)
+                pred_poses = predictions['extrinsics_opencv']
+                K = predictions["intrsicis_opencv"][-1].detach().cpu().numpy()
+                test_pred_pose, test_gt_pose = align_gt(pred_poses=pred_poses,
+                                        gt_poses=gt_poses,)
+
+                # todo: first align pred pose to gt pose, and visulaize, remember to speficy saving path
+                final_img = visualize_final_poses(test_image, K, object_bbox_3d, test_pred_pose.detach().cpu().numpy(), 
+                                                  test_gt_pose.detach().cpu().numpy())
+                img_output_path = html_output_path.replace("html", "jpg")
+                imsave(img_output_path, final_img)
+                
 
             # Visualize the 3D reconstruction if enabled
             # When doing pose_estimation, visualization is cancelled
@@ -323,6 +345,11 @@ class VGGSfMRunner:
                 self.visualize_3D_in_gradio(predictions, seq_name, output_dir)
 
             # self.save_extrinsics_opencv(predictions, image_paths, output_dir)
+
+            # note: when this bool is set to True, the number of predicted extrinsics_opencv will actually be smaller than gt_poses 
+            if self.cfg.filter_invalid_frame: 
+                valid_frame_mask = predictions['valid_frame_mask'].cpu()
+                gt_poses = gt_poses[valid_frame_mask]
 
             metric = self.calculate_metric(pred_poses=predictions["extrinsics_opencv"],
                                            gt_poses=gt_poses,
@@ -335,10 +362,9 @@ class VGGSfMRunner:
     def calculate_metric(self, pred_poses, gt_poses, model_path):
         # calculate metric
         test_pred_pose, test_gt_pose = align_gt(pred_poses=pred_poses,
-                                                gt_poses=gt_poses,
-                                                batch_size=self.cfg.batch_size,)
+                                                gt_poses=gt_poses,)
         
-        metric = compoute_metric(model_path=model_path,
+        metric = compute_metric(model_path=model_path,
                         pred_pose=test_pred_pose,
                         gt_pose=test_gt_pose,
                         )       
@@ -703,7 +729,7 @@ class VGGSfMRunner:
         predictions["pred_vis"] = pred_vis
         predictions["pred_score"] = pred_score
         predictions["valid_tracks"] = valid_tracks
-        
+        predictions['valid_frame_mask'] = valid_frame_mask
         predictions["additional_points_dict"] = additional_points_dict
         return predictions
 

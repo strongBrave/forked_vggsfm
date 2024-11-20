@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import os 
 import json
+import cv2
 import pandas as pd
 
 from minipytorch3d.rotation_conversions import (
@@ -360,6 +361,54 @@ def get_all_points_on_model(cad_model_path):
     model = np.stack([x, y, z], axis=-1) # n x 3
     return model
 
+def pts_range_to_bbox_pts(max_pt,min_pt):
+    maxx,maxy,maxz = max_pt
+    minx,miny,minz = min_pt
+    pts=[
+        [minx,miny,minz],
+        [minx,maxy,minz],
+        [maxx,maxy,minz],
+        [maxx,miny,minz],
+
+        [minx,miny,maxz],
+        [minx,maxy,maxz],
+        [maxx,maxy,maxz],
+        [maxx,miny,maxz],
+    ]
+    return np.asarray(pts,np.float32)
+
+def draw_bbox_3d(img,pts2d,color=(0,255,0)):
+    red_colors=np.zeros([8,3],np.uint8)
+    red_colors[:,0]=255
+    img = draw_keypoints(img, pts2d, colors=red_colors)
+
+    pts2d = np.round(pts2d).astype(np.int32)
+    img = cv2.line(img,tuple(pts2d[0]),tuple(pts2d[1]),color,2)
+    img = cv2.line(img,tuple(pts2d[1]),tuple(pts2d[2]),color,2)
+    img = cv2.line(img,tuple(pts2d[2]),tuple(pts2d[3]),color,2)
+    img = cv2.line(img,tuple(pts2d[3]),tuple(pts2d[0]),color,2)
+
+    img = cv2.line(img,tuple(pts2d[4]),tuple(pts2d[5]),color,2)
+    img = cv2.line(img,tuple(pts2d[5]),tuple(pts2d[6]),color,2)
+    img = cv2.line(img,tuple(pts2d[6]),tuple(pts2d[7]),color,2)
+    img = cv2.line(img,tuple(pts2d[7]),tuple(pts2d[4]),color,2)
+
+    img = cv2.line(img,tuple(pts2d[0]),tuple(pts2d[4]),color,2)
+    img = cv2.line(img,tuple(pts2d[1]),tuple(pts2d[5]),color,2)
+    img = cv2.line(img,tuple(pts2d[2]),tuple(pts2d[6]),color,2)
+    img = cv2.line(img,tuple(pts2d[3]),tuple(pts2d[7]),color,2)
+    return img
+
+def visualize_final_poses(img, K, object_bbox_3d, pose_pr, pose_gt=None):
+    bbox_pts_pr, _ = project_points(object_bbox_3d, K, pose_pr)
+    bbox_img = img
+    if pose_gt is not None:
+        bbox_pts_gt, _ = project_points(object_bbox_3d, pose_gt, K)
+        bbox_img = draw_bbox_3d(bbox_img, bbox_pts_gt)
+    bbox_img = draw_bbox_3d(bbox_img, bbox_pts_pr, (0, 0, 255))
+    return bbox_img
+
+
 def translation_meters(tvec_gt, tvec_pred, batch_size=None, input_unit="m"):
     # defult metric unit is cm.
     tvec_diff = tvec_gt - tvec_pred
@@ -377,18 +426,19 @@ def translation_meters(tvec_gt, tvec_pred, batch_size=None, input_unit="m"):
     tvec_diff_norm = torch.norm(tvec_diff)
     return tvec_diff_norm
 
+def project_points(xyz, K, RT):
+    """
+    NOTE: need to use original K
+    xyz: [N, 3]
+    K: [3, 3]
+    RT: [3, 4]
+    """
+    xyz = np.dot(xyz, RT[:, :3].T) + RT[:, 3:].T
+    xyz = np.dot(xyz, K.T)
+    xy = xyz[:, :2] / xyz[:, 2:]
+    return xy
+
 def projection_2d_error(model_3d_pts, pred_pose, gt_pose, t_scale='m'):
-    def project(xyz, K, RT):
-        """
-        NOTE: need to use original K
-        xyz: [N, 3]
-        K: [3, 3]
-        RT: [3, 4]
-        """
-        xyz = np.dot(xyz, RT[:, :3].T) + RT[:, 3:].T
-        xyz = np.dot(xyz, K.T)
-        xy = xyz[:, :2] / xyz[:, 2:]
-        return xy
     
     K = np.array([[572.4114, 0, 325.2611], [0, 573.57043, 242.04899], [0, 0, 1]]) # only for linemod debug test
 
@@ -406,8 +456,8 @@ def projection_2d_error(model_3d_pts, pred_pose, gt_pose, t_scale='m'):
     pred_pose = pred_pose.to('cpu').numpy()
     gt_pose = gt_pose.to('cpu').numpy()
 
-    model_2d_pred = project(model_3d_pts, K, pred_pose) # pose_pred: 3*4
-    model_2d_targets = project(model_3d_pts, K, gt_pose)
+    model_2d_pred = project_points(model_3d_pts, K, pred_pose) # pose_pred: 3*4
+    model_2d_targets = project_points(model_3d_pts, K, gt_pose)
     proj_mean_diff = np.mean(np.linalg.norm(model_2d_pred - model_2d_targets, axis=-1))
     out = proj_mean_diff
         
@@ -480,7 +530,7 @@ def add_metric(model_3d_pts, pred_pose, gt_pose, diameter=None, t_scale='m', per
     return np.array(ret) if len(ret) > 1 else ret[0]
     
 
-def compoute_metric(model_path,
+def compute_metric(model_path,
                     pred_pose,
                     gt_pose,
                     diameter=None,

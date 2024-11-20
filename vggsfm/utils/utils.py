@@ -857,7 +857,7 @@ def sample_subrange(N, idx, L):
 
 def opencv_to_pytorch3d(R: torch.tensor, T: torch.tensor):
     print(R.shape, T.shape)
-    R = R.clone().permute(0, 2, 1)
+    R = R.permute(0, 2, 1)
     R[:, :, :2] *= -1
     T[:, :2] *= -1
 
@@ -977,3 +977,4 @@ def make_html(predictions, gt_poses, images, cfg, cls_name, id=None, eval=False)
             plotly_html=html_plot,
         )
         f.write(s)
+    return html_output_path
