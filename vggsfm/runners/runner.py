@@ -325,14 +325,14 @@ class VGGSfMRunner:
                 test_image_basename = os.path.basename(image_paths[-1])
                 test_image = original_images[test_image_basename] # np.array (H, W, 3)
                 pred_poses = predictions['extrinsics_opencv']
-                K = predictions["intrsicis_opencv"][-1].detach().cpu().numpy()
+                K = predictions["intrinsics_opencv"][-1].detach().cpu().numpy()
                 test_pred_pose, test_gt_pose = align_gt(pred_poses=pred_poses,
                                         gt_poses=gt_poses,)
 
                 # todo: first align pred pose to gt pose, and visulaize, remember to speficy saving path
                 final_img = visualize_final_poses(test_image, K, object_bbox_3d, test_pred_pose.detach().cpu().numpy(), 
                                                   test_gt_pose.detach().cpu().numpy())
-                img_output_path = html_output_path.replace("html", "jpg")
+                img_output_path = html_output_path.rsplit('.', 1)[0] + '.jpg'
                 imsave(img_output_path, final_img)
                 
 

@@ -377,6 +377,17 @@ def pts_range_to_bbox_pts(max_pt,min_pt):
     ]
     return np.asarray(pts,np.float32)
 
+def draw_keypoints(img, kps, colors=None, radius=2):
+    out_img=img.copy()
+    for pi, pt in enumerate(kps):
+        pt = np.round(pt).astype(np.int32)
+        if colors is not None:
+            color=[int(c) for c in colors[pi]]
+            cv2.circle(out_img, tuple(pt), radius, color, -1)
+        else:
+            cv2.circle(out_img, tuple(pt), radius, (0,255,0), -1)
+    return out_img
+
 def draw_bbox_3d(img,pts2d,color=(0,255,0)):
     red_colors=np.zeros([8,3],np.uint8)
     red_colors[:,0]=255
@@ -400,10 +411,10 @@ def draw_bbox_3d(img,pts2d,color=(0,255,0)):
     return img
 
 def visualize_final_poses(img, K, object_bbox_3d, pose_pr, pose_gt=None):
-    bbox_pts_pr, _ = project_points(object_bbox_3d, K, pose_pr)
+    bbox_pts_pr = project_points(object_bbox_3d, K, pose_pr)
     bbox_img = img
     if pose_gt is not None:
-        bbox_pts_gt, _ = project_points(object_bbox_3d, pose_gt, K)
+        bbox_pts_gt = project_points(object_bbox_3d, K, pose_gt)
         bbox_img = draw_bbox_3d(bbox_img, bbox_pts_gt)
     bbox_img = draw_bbox_3d(bbox_img, bbox_pts_pr, (0, 0, 255))
     return bbox_img
@@ -433,6 +444,7 @@ def project_points(xyz, K, RT):
     K: [3, 3]
     RT: [3, 4]
     """
+
     xyz = np.dot(xyz, RT[:, :3].T) + RT[:, 3:].T
     xyz = np.dot(xyz, K.T)
     xy = xyz[:, :2] / xyz[:, 2:]

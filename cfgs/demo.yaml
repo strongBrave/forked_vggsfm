@@ -5,7 +5,7 @@ hydra:
 
 model_name: "vggsfm_v2_0_0"
 
-seed: 0
+seed: 2
 img_size: 1024
 
 
